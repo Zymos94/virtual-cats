@@ -13,7 +13,7 @@ export function useGameLoop() {
       const deltaMs = now - lastTime.current
       lastTime.current = now
 
-      usePetStore.getState().tick(deltaMs)
+      usePetStore.getState().tick(now, deltaMs)
 
       rafId.current = requestAnimationFrame(frame)
     }

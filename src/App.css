@@ -1,5 +1,5 @@
 .app {
-  max-width: 700px;
+  max-width: 640px;
   margin: 0 auto;
   padding: 24px;
   text-align: center;
@@ -7,22 +7,33 @@
 
 .scene {
   position: relative;
-  width: 100%;
-  height: 400px;
+  width: 600px;
+  height: 320px;
+  max-width: 100%;
+  margin: 0 auto 24px;
   background: #cfe8c9;
   border: 2px solid #8fae86;
   border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 24px;
 }
 
 .pet-sprite {
   position: absolute;
-  width: 48px;
-  height: 48px;
-  background: #d98a4f;
-  border-radius: 8px;
-  border: 2px solid #8a5327;
+  pointer-events: none;
+}
+
+@keyframes tail-sway {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+.tail-idle-sway {
+  animation: tail-sway 2.6s ease-in-out infinite;
 }
 
 .stats-panel {

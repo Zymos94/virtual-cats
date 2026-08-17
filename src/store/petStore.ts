@@ -1,10 +1,13 @@
 import { create } from 'zustand'
 import type { Needs, Pet } from '../types/pet'
+import { updatePetBehavior } from '../game/behaviorFSM'
+import { movePet } from '../game/movement'
 
 interface PetStore {
   pets: Record<string, Pet>
+  sceneBounds: { width: number; height: number }
   decayAccumulatorMs: number
-  tick: (deltaMs: number) => void
+  tick: (now: number, deltaMs: number) => void
   feedPet: (petId: string) => void
   cleanPet: (petId: string) => void
   playWithPet: (petId: string) => void
@@ -41,16 +44,21 @@ const starterPet: Pet = {
   name: 'Whiskers',
   needs: { hunger: 70, energy: 85, hygiene: 90, happiness: 60 },
   position: { x: 150, y: 100 },
+  destination: null,
   action: 'idle',
+  facing: 'right',
+  actionStartedAt: 0,
 }
 
 export const usePetStore = create<PetStore>((set) => ({
   pets: { [starterPet.id]: starterPet },
+  sceneBounds: { width: 600, height: 320 },
   decayAccumulatorMs: 0,
 
-  // Called every animation frame by the game loop. Needs decay in fixed
-  // 1-second steps so the rate stays consistent regardless of frame rate.
-  tick: (deltaMs) =>
+  // Called every animation frame by the game loop. Needs decay happens in
+  // fixed 1-second steps so its rate stays consistent regardless of frame
+  // rate; behavior (FSM) and movement run every frame using the real delta.
+  tick: (now, deltaMs) =>
     set((state) => {
       let accumulator = state.decayAccumulatorMs + deltaMs
       let pets = state.pets
@@ -62,7 +70,13 @@ export const usePetStore = create<PetStore>((set) => ({
         accumulator -= DECAY_INTERVAL_MS
       }
 
-      return { pets, decayAccumulatorMs: accumulator }
+      const moved: Record<string, Pet> = {}
+      for (const id in pets) {
+        const decided = updatePetBehavior(pets[id], { now, sceneBounds: state.sceneBounds })
+        moved[id] = movePet(decided, deltaMs)
+      }
+
+      return { pets: moved, decayAccumulatorMs: accumulator }
     }),
 
   feedPet: (petId) =>
