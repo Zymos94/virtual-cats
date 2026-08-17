@@ -123,3 +123,45 @@
 .item-icon {
   font-size: 22px;
 }
+
+.breeding-panel {
+  text-align: left;
+  margin-top: 20px;
+}
+
+.breeding-panel h3 {
+  font-size: 16px;
+  margin: 0 0 10px;
+  color: var(--text-h);
+}
+
+.breeding-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.breeding-controls select {
+  flex: 1;
+  padding: 8px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+.breeding-controls button {
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.breeding-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

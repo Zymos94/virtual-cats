@@ -1,7 +1,10 @@
 import { create } from 'zustand'
+import { nanoid } from 'nanoid'
 import type { ActionState, Needs, Pet } from '../types/pet'
+import type { Genetics } from '../types/genetics'
 import { updatePetBehavior } from '../game/behaviorFSM'
 import { movePet } from '../game/movement'
+import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
 
 interface PetStore {
@@ -12,6 +15,7 @@ interface PetStore {
   tick: (now: number, deltaMs: number) => void
   selectPet: (petId: string | null) => void
   useItem: (petId: string, itemId: string) => void
+  breedPets: (parentAId: string, parentBId: string) => void
 }
 
 const DECAY_INTERVAL_MS = 1000
@@ -33,13 +37,20 @@ function applyDecay(pet: Pet): Pet {
   }
 }
 
-function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'color'> & Partial<Pet>): Pet {
+// Both alleles the same value, so the phenotype is guaranteed regardless of
+// dominance order — used only for the hand-picked starter pets below.
+function homozygous<T extends string>(value: T): { allele1: T; allele2: T } {
+  return { allele1: value, allele2: value }
+}
+
+function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genetics'> & Partial<Pet>): Pet {
   return {
     needs: { hunger: 70, energy: 85, hygiene: 90, happiness: 60 },
     destination: null,
     action: 'idle',
     facing: 'right',
     actionStartedAt: 0,
+    parentIds: null,
     ...overrides,
   }
 }
@@ -49,19 +60,34 @@ const starterPets: Pet[] = [
     id: 'pet-1',
     name: 'Whiskers',
     position: { x: 120, y: 90 },
-    color: { body: '#d98a4f', stroke: '#8a5327' },
+    genetics: {
+      furColor: homozygous('orange'),
+      pattern: homozygous('solid'),
+      eyeColor: homozygous('green'),
+      size: homozygous('medium'),
+    },
   }),
   makeStarterPet({
     id: 'pet-2',
     name: 'Mittens',
     position: { x: 320, y: 140 },
-    color: { body: '#9a9a9a', stroke: '#4d4d4d' },
+    genetics: {
+      furColor: homozygous('gray'),
+      pattern: homozygous('spotted'),
+      eyeColor: homozygous('blue'),
+      size: homozygous('small'),
+    },
   }),
   makeStarterPet({
     id: 'pet-3',
     name: 'Tom',
     position: { x: 460, y: 60 },
-    color: { body: '#e8c96b', stroke: '#8f7327' },
+    genetics: {
+      furColor: homozygous('cream'),
+      pattern: homozygous('solid'),
+      eyeColor: homozygous('amber'),
+      size: homozygous('large'),
+    },
   }),
 ]
 
@@ -118,6 +144,36 @@ export const usePetStore = create<PetStore>((set) => ({
           ...state.pets,
           [petId]: { ...pet, needs, action, actionStartedAt: performance.now() },
         },
+      }
+    }),
+
+  breedPets: (parentAId, parentBId) =>
+    set((state) => {
+      const parentA = state.pets[parentAId]
+      const parentB = state.pets[parentBId]
+      if (!parentA || !parentB || parentA.id === parentB.id) return state
+
+      const genetics: Genetics = breedGenetics(parentA.genetics, parentB.genetics)
+      const id = nanoid()
+      const kitten: Pet = {
+        id,
+        name: 'New Kitten',
+        needs: { hunger: 80, energy: 80, hygiene: 80, happiness: 80 },
+        position: {
+          x: (parentA.position.x + parentB.position.x) / 2,
+          y: (parentA.position.y + parentB.position.y) / 2,
+        },
+        destination: null,
+        action: 'idle',
+        facing: 'right',
+        actionStartedAt: performance.now(),
+        genetics,
+        parentIds: [parentA.id, parentB.id],
+      }
+
+      return {
+        pets: { ...state.pets, [id]: kitten },
+        selectedPetId: id,
       }
     }),
 }))

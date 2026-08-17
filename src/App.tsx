@@ -3,6 +3,7 @@ import { usePetStore } from './store/petStore'
 import { Scene } from './components/Scene'
 import { StatBar } from './components/StatBar'
 import { Inventory } from './components/Inventory'
+import { BreedingPanel } from './components/BreedingPanel'
 import './App.css'
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
         )}
       </div>
       <Inventory selectedPetId={selectedPetId} />
+      <BreedingPanel pets={Object.values(pets)} />
     </div>
   )
 }
