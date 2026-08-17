@@ -14,6 +14,7 @@ import { getTailAnchorLocal } from '../game/tailMood'
 import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
 import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 import { STARTER_AGE_MS } from '../game/lifeStage'
+import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
 
 interface PetStore {
   pets: Record<string, Pet>
@@ -378,6 +379,7 @@ export const usePetStore = create<PetStore>((set) => ({
             const action: ActionState =
               definition.category === 'food' ? 'eating' : definition.category === 'bed' ? 'sleeping' : 'playing'
             finalPet = { ...finalPet, needs, action, targetItemId: null, actionStartedAt: now }
+            if (action === 'eating' || action === 'playing') playSound(action)
             if (definition.consumable) {
               delete sceneItems[placedItem.id]
             } else {
@@ -408,6 +410,7 @@ export const usePetStore = create<PetStore>((set) => ({
         if (before?.action === 'walking' && after.action === 'idle' && after.targetPetId) {
           const partner = moved[after.targetPetId]
           if (partner && !partner.inSuitcase && partner.action !== 'held' && partner.action !== 'playing') {
+            playSound('playing')
             moved[id] = {
               ...after,
               action: 'playing',
@@ -465,6 +468,13 @@ export const usePetStore = create<PetStore>((set) => ({
     set((state) => {
       const pet = state.pets[petId]
       if (!pet || pet.inSuitcase) return state
+      // An aloof cat (low affection) doesn't purr for it — a single hiss
+      // instead, a small audio payoff for the personality trait.
+      if (pet.affection < 25) {
+        playSound('hiss')
+      } else {
+        startLoop(petId, 'purrLoop', 0.35)
+      }
       const pets = releaseSocialClaims(state.pets, petId)
       return {
         pets: { ...pets, [petId]: { ...pets[petId], action: 'petting', destination: null, targetItemId: null, targetPetId: null } },
@@ -475,6 +485,7 @@ export const usePetStore = create<PetStore>((set) => ({
   endPetting: (petId) =>
     set((state) => {
       const pet = state.pets[petId]
+      stopLoop(petId)
       if (!pet || pet.action !== 'petting') return state
       return { pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } } }
     }),
@@ -645,6 +656,7 @@ export const usePetStore = create<PetStore>((set) => ({
 
   resetGame: () => {
     clearSavedGame()
+    stopAllLoops()
     set({ pets: freshStarterPets(), sceneItems: {}, tailSegments: {}, selectedPetId: null })
   },
 }))

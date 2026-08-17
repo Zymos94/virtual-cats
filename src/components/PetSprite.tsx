@@ -6,6 +6,7 @@ import { mousePosition } from '../game/mousePosition'
 import { getTailAnchorLocal, getTailMood } from '../game/tailMood'
 import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
 import { getLifeStage, getLifeStageScale } from '../game/lifeStage'
+import { playSound } from '../game/sound'
 
 interface PetSpriteProps {
   pet: Pet
@@ -120,6 +121,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         }
       } else {
         usePetStore.getState().selectPet(pet.id)
+        playSound('select')
       }
     }
 
