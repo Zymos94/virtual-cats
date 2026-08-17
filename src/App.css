@@ -203,6 +203,12 @@
   font-size: 13px;
 }
 
+.breed-hint {
+  margin-bottom: 10px;
+  opacity: 0.75;
+  font-size: 13px;
+}
+
 .suitcase-tabs {
   display: flex;
   gap: 4px;

@@ -13,6 +13,7 @@ import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './pers
 import { getTailAnchorLocal } from '../game/tailMood'
 import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
 import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
+import { STARTER_AGE_MS } from '../game/lifeStage'
 
 interface PetStore {
   pets: Record<string, Pet>
@@ -123,6 +124,7 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     targetPetId: null,
     socialClaimedBy: null,
     affection: 60,
+    ageMs: STARTER_AGE_MS,
     ...overrides,
   }
 }
@@ -189,6 +191,7 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     targetPetId: null,
     socialClaimedBy: null,
     affection: pet.affection ?? 60,
+    ageMs: pet.ageMs ?? STARTER_AGE_MS,
   }
 }
 
@@ -268,11 +271,14 @@ export const usePetStore = create<PetStore>((set) => ({
 
       const moved: Record<string, Pet> = {}
       for (const id in pets) {
-        const pet = pets[id]
-        if (pet.inSuitcase) {
-          moved[id] = pet
+        const storedPet = pets[id]
+        if (storedPet.inSuitcase) {
+          moved[id] = storedPet
           continue
         }
+        // Ages only while out of the suitcase, same as needs decay — a
+        // cat put away doesn't grow up while it's not being played with.
+        const pet = { ...storedPet, ageMs: storedPet.ageMs + deltaMs }
 
         // Player is holding a pointer down on this cat right now — AI is
         // fully suspended (see behaviorFSM's 'petting' case), and instead
@@ -619,6 +625,9 @@ export const usePetStore = create<PetStore>((set) => ({
         socialClaimedBy: null,
         // Same light inheritance-with-variance pattern as attentionSpan.
         affection: clamp((parentA.affection + parentB.affection) / 2 + (Math.random() * 30 - 15)),
+        // A real newborn — starts life as a kitten and grows up in real
+        // time, unlike its already-grown parents.
+        ageMs: 0,
       }
 
       return {

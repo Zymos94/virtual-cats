@@ -1,4 +1,5 @@
 import type { Pet } from '../types/pet'
+import { getLifeStage, getLifeStageSpeedMultiplier } from './lifeStage'
 
 const SPEED_PX_PER_SEC = 40
 
@@ -26,7 +27,8 @@ export function movePet(pet: Pet, deltaMs: number): Pet {
   const dist = Math.hypot(dx, dy)
   if (dist < 1) return pet
 
-  const step = Math.min(dist, (SPEED_PX_PER_SEC * deltaMs) / 1000)
+  const speed = SPEED_PX_PER_SEC * getLifeStageSpeedMultiplier(getLifeStage(pet.ageMs))
+  const step = Math.min(dist, (speed * deltaMs) / 1000)
   const facing: Pet['facing'] = dx < 0 ? 'left' : dx > 0 ? 'right' : pet.facing
 
   return {

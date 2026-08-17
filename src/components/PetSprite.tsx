@@ -5,6 +5,7 @@ import { deriveAppearance } from '../game/appearance'
 import { mousePosition } from '../game/mousePosition'
 import { getTailAnchorLocal, getTailMood } from '../game/tailMood'
 import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
+import { getLifeStage, getLifeStageScale } from '../game/lifeStage'
 
 interface PetSpriteProps {
   pet: Pet
@@ -48,7 +49,8 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const isWalking = pet.action === 'walking'
   const isIdleLike = !isWalking
   const tailClassName = tailMood === 'agitated' ? 'tail-flick' : isIdleLike ? 'tail-idle-sway' : undefined
-  const { body, stroke, eye, scale, spotted } = deriveAppearance(pet.genetics)
+  const { body, stroke, eye, scale: geneticScale, spotted } = deriveAppearance(pet.genetics)
+  const scale = geneticScale * getLifeStageScale(getLifeStage(pet.ageMs))
   const xScale = pet.facing === 'left' ? -scale : scale
 
   const walkPhase = isWalking ? (performance.now() % WALK_CYCLE_MS) / WALK_CYCLE_MS : 0

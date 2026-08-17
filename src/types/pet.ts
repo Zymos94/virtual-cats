@@ -44,4 +44,9 @@ export interface Pet {
   // held in the 'petting' action. Like attentionSpan, not part of the
   // formal genetics system, just a per-cat trait kittens roughly inherit.
   affection: number
+  // Real milliseconds this cat has spent out of the suitcase, accumulated
+  // in petStore.tick(). Purely a source value — life stage, size, and
+  // speed are all derived from it on the fly via lifeStage.ts rather than
+  // stored redundantly.
+  ageMs: number
 }

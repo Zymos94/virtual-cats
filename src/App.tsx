@@ -7,6 +7,8 @@ import { Suitcase } from './components/Suitcase'
 import { BreedingPanel } from './components/BreedingPanel'
 import { SaveLoadControls } from './components/SaveLoadControls'
 import { getPersonalityLabel } from './game/personality'
+import { getBreedName } from './game/breedName'
+import { getLifeStage, getLifeStageLabel } from './game/lifeStage'
 import './App.css'
 
 function App() {
@@ -41,6 +43,9 @@ function App() {
                 onChange={(e) => usePetStore.getState().renamePet(selectedPet.id, e.target.value)}
                 aria-label="Cat name"
               />
+              <p className="hint breed-hint">
+                {getLifeStageLabel(getLifeStage(selectedPet.ageMs))} {getBreedName(selectedPet.genetics)}
+              </p>
               <StatBar label="Hunger" value={selectedPet.needs.hunger} color="#e07a3f" />
               <StatBar label="Energy" value={selectedPet.needs.energy} color="#3f8ee0" />
               <StatBar label="Hygiene" value={selectedPet.needs.hygiene} color="#3fe0a0" />
