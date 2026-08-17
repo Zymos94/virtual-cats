@@ -6,6 +6,7 @@ import { updatePetBehavior } from '../game/behaviorFSM'
 import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
+import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 
 interface PetStore {
   pets: Record<string, Pet>
@@ -16,6 +17,7 @@ interface PetStore {
   selectPet: (petId: string | null) => void
   useItem: (petId: string, itemId: string) => void
   breedPets: (parentAId: string, parentBId: string) => void
+  resetGame: () => void
 }
 
 const DECAY_INTERVAL_MS = 1000
@@ -91,8 +93,29 @@ const starterPets: Pet[] = [
   }),
 ]
 
+function freshStarterPets(): Record<string, Pet> {
+  return Object.fromEntries(starterPets.map((pet) => [pet.id, pet]))
+}
+
+// Timestamp fields like actionStartedAt are meaningless across a page
+// reload (performance.now() resets to ~0 for the new session), so loaded
+// pets are reset to a clean idle state rather than resuming mid-animation
+// with a stale, session-relative timestamp.
+function sanitizeLoadedPet(pet: Pet): Pet {
+  return { ...pet, action: 'idle', destination: null, actionStartedAt: 0 }
+}
+
+function loadInitialPets(): Record<string, Pet> {
+  const saved = loadFromLocalStorage()
+  if (!saved || Object.keys(saved).length === 0) return freshStarterPets()
+
+  const sanitized: Record<string, Pet> = {}
+  for (const id in saved) sanitized[id] = sanitizeLoadedPet(saved[id])
+  return sanitized
+}
+
 export const usePetStore = create<PetStore>((set) => ({
-  pets: Object.fromEntries(starterPets.map((pet) => [pet.id, pet])),
+  pets: loadInitialPets(),
   sceneBounds: { width: 600, height: 320 },
   decayAccumulatorMs: 0,
   selectedPetId: null,
@@ -176,4 +199,20 @@ export const usePetStore = create<PetStore>((set) => ({
         selectedPetId: id,
       }
     }),
+
+  resetGame: () => {
+    clearSavedGame()
+    set({ pets: freshStarterPets(), selectedPetId: null })
+  },
 }))
+
+// Autosave. tick() calls set() up to 60x/sec, so saving on every single
+// state change would hammer localStorage — instead this throttles actual
+// writes to at most once every 2 real seconds.
+let lastSaveAt = 0
+usePetStore.subscribe((state) => {
+  const now = Date.now()
+  if (now - lastSaveAt < 2000) return
+  lastSaveAt = now
+  saveToLocalStorage(state.pets)
+})

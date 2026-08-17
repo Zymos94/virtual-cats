@@ -4,6 +4,7 @@ import { Scene } from './components/Scene'
 import { StatBar } from './components/StatBar'
 import { Inventory } from './components/Inventory'
 import { BreedingPanel } from './components/BreedingPanel'
+import { SaveLoadControls } from './components/SaveLoadControls'
 import './App.css'
 
 function App() {
@@ -15,7 +16,10 @@ function App() {
 
   return (
     <div className="app">
-      <h1>Virtual Cats</h1>
+      <div className="header-row">
+        <h1>Virtual Cats</h1>
+        <SaveLoadControls />
+      </div>
       <Scene pets={Object.values(pets)} selectedPetId={selectedPetId} />
       <div className="stats-panel">
         {selectedPet ? (
