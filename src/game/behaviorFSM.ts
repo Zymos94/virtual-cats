@@ -28,7 +28,10 @@ const SOCIAL_APPROACH_OFFSET = 50
 export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
   switch (pet.action) {
     case 'idle': {
-      if (pet.needs.energy < 20) {
+      // Truly exhausted — collapse right here rather than trying to make
+      // it to a bed. Above this floor, a low-energy cat instead competes
+      // for a bed through bestTarget below, same as any other want.
+      if (pet.needs.energy < 10) {
         return { ...pet, action: 'sleeping', actionStartedAt: ctx.now }
       }
       // Someone else is on their way over to play — wait here instead of

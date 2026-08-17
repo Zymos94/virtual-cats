@@ -1,5 +1,5 @@
-import type { Pet } from '../types/pet'
-import type { ItemDefinition } from '../types/item'
+import type { Needs, Pet } from '../types/pet'
+import type { ItemCategory, ItemDefinition } from '../types/item'
 
 const WANT_THRESHOLD = 60
 const SOCIAL_HAPPINESS_THRESHOLD = 70
@@ -10,11 +10,27 @@ export interface AttentionTarget {
   position: { x: number; y: number }
 }
 
+// Which need a given category of item addresses — grooming and the
+// litter box both land on hygiene, everything else gets its own.
+function needKeyForCategory(category: ItemCategory): keyof Needs {
+  switch (category) {
+    case 'food':
+      return 'hunger'
+    case 'toy':
+      return 'happiness'
+    case 'bed':
+      return 'energy'
+    case 'grooming':
+    case 'litterbox':
+    default:
+      return 'hygiene'
+  }
+}
+
 // How much a pet currently wants a given item — 0 if the relevant need is
 // already satisfied, otherwise larger the more urgent it is.
 export function itemUrgency(pet: Pet, definition: ItemDefinition): number {
-  const needKey = definition.category === 'food' ? 'hunger' : definition.category === 'toy' ? 'happiness' : 'hygiene'
-  const value = pet.needs[needKey]
+  const value = pet.needs[needKeyForCategory(definition.category)]
   return value >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - value
 }
 

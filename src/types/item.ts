@@ -1,6 +1,6 @@
 import type { Needs } from './pet'
 
-export type ItemCategory = 'food' | 'toy' | 'grooming'
+export type ItemCategory = 'food' | 'toy' | 'grooming' | 'bed' | 'litterbox'
 
 // Every item has physical characteristics — not just the ball. Future
 // items just need a profile, not new code: a cat bed is heavy/high-friction
@@ -19,6 +19,10 @@ export interface ItemDefinition {
   icon: string // emoji placeholder — no art assets needed for this
   effect: Partial<Needs>
   physics: PhysicsProfile
+  // Consumables (food, toys, grooming) vanish from the room once a cat
+  // uses them. Furniture (bed, litter box) stays put and can be reused
+  // by any cat, over and over, like a real piece of furniture.
+  consumable: boolean
 }
 
 // An actual instance of an item dropped in the room, as opposed to

@@ -8,6 +8,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     icon: '🐟',
     effect: { hunger: 30 },
     physics: { mass: 1, friction: 0.95, bounciness: 0 },
+    consumable: true,
   },
   {
     id: 'cake',
@@ -16,6 +17,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     icon: '🍰',
     effect: { hunger: 15, happiness: 10 },
     physics: { mass: 1.1, friction: 0.95, bounciness: 0 },
+    consumable: true,
   },
   {
     id: 'ball',
@@ -24,6 +26,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     icon: '🎾',
     effect: { happiness: 25, energy: -10 },
     physics: { mass: 0.5, friction: 0.15, bounciness: 0.55 },
+    consumable: true,
   },
   {
     id: 'feather',
@@ -32,6 +35,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     icon: '🪶',
     effect: { happiness: 20, energy: -5 },
     physics: { mass: 0.7, friction: 0.45, bounciness: 0.1 },
+    consumable: true,
   },
   {
     id: 'brush',
@@ -40,5 +44,26 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     icon: '🧹',
     effect: { hygiene: 40 },
     physics: { mass: 1.2, friction: 0.25, bounciness: 0 },
+    consumable: true,
+  },
+  {
+    id: 'bed',
+    name: 'Cat Bed',
+    category: 'bed',
+    icon: '🛏️',
+    effect: { energy: 40 },
+    // Heavy and high-friction — barely budges from a throw/drag swipe,
+    // the way a piece of furniture should feel next to a rolling ball.
+    physics: { mass: 3, friction: 0.9, bounciness: 0 },
+    consumable: false,
+  },
+  {
+    id: 'litterbox',
+    name: 'Litter Box',
+    category: 'litterbox',
+    icon: '🚽',
+    effect: { hygiene: 50 },
+    physics: { mass: 2.5, friction: 0.9, bounciness: 0 },
+    consumable: false,
   },
 ]

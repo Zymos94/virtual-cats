@@ -327,11 +327,14 @@ export const usePetStore = create<PetStore>((set) => ({
 
         let finalPet = movePet(decided, deltaMs)
 
-        // Arrived at a targeted item this tick — consume it: apply its
-        // effect, switch to an eating/playing animation, and remove it
-        // from the room. If it's still airborne (mid-bounce, or the player
-        // just re-threw it), don't "eat" something floating above the
-        // floor — just give up this attempt and reconsider next cycle.
+        // Arrived at a targeted item this tick — use it: apply its effect
+        // and switch to an eating/sleeping/playing animation. Consumables
+        // (food, toys, grooming) then vanish from the room; furniture
+        // (bed, litter box) stays put and just releases its claim so it's
+        // free for any cat — including this one — to use again later. If
+        // it's still airborne (mid-bounce, or the player just re-threw
+        // it), don't "use" something floating above the floor — just give
+        // up this attempt and reconsider next cycle.
         if (pet.action === 'walking' && finalPet.action === 'idle' && finalPet.targetItemId) {
           const placedItem = sceneItems[finalPet.targetItemId]
           const definition = placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
@@ -342,9 +345,14 @@ export const usePetStore = create<PetStore>((set) => ({
               const amount = definition.effect[need] ?? 0
               needs = { ...needs, [need]: clamp(needs[need] + amount) }
             }
-            const action: ActionState = definition.category === 'food' ? 'eating' : 'playing'
+            const action: ActionState =
+              definition.category === 'food' ? 'eating' : definition.category === 'bed' ? 'sleeping' : 'playing'
             finalPet = { ...finalPet, needs, action, targetItemId: null, actionStartedAt: now }
-            delete sceneItems[placedItem.id]
+            if (definition.consumable) {
+              delete sceneItems[placedItem.id]
+            } else {
+              sceneItems[placedItem.id] = { ...placedItem, claimedBy: null }
+            }
           } else {
             finalPet = { ...finalPet, targetItemId: null }
           }
