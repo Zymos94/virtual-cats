@@ -24,7 +24,13 @@ function App() {
       <div className="stats-panel">
         {selectedPet ? (
           <>
-            <h2>{selectedPet.name}</h2>
+            <input
+              className="pet-name-input"
+              value={selectedPet.name}
+              maxLength={20}
+              onChange={(e) => usePetStore.getState().renamePet(selectedPet.id, e.target.value)}
+              aria-label="Cat name"
+            />
             <StatBar label="Hunger" value={selectedPet.needs.hunger} color="#e07a3f" />
             <StatBar label="Energy" value={selectedPet.needs.energy} color="#3f8ee0" />
             <StatBar label="Hygiene" value={selectedPet.needs.hygiene} color="#3fe0a0" />

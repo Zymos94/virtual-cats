@@ -67,12 +67,38 @@
   animation: tail-sway 2.6s ease-in-out infinite;
 }
 
-.stats-panel {
+.stats-panel,
+.inventory,
+.breeding-panel {
   text-align: left;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px 20px;
+  margin-top: 16px;
+}
+
+.pet-name-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 2px 0;
+  font-size: 24px;
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+}
+
+.pet-name-input:hover {
+  border-bottom-color: var(--border);
+}
+
+.pet-name-input:focus {
+  outline: none;
+  border-bottom-color: var(--accent-border);
 }
 
 .stat-bar {
@@ -104,11 +130,6 @@
   margin: 0;
   color: var(--text);
   font-size: 15px;
-}
-
-.inventory {
-  text-align: left;
-  margin-top: 20px;
 }
 
 .inventory h3 {
@@ -149,11 +170,6 @@
 
 .item-icon {
   font-size: 22px;
-}
-
-.breeding-panel {
-  text-align: left;
-  margin-top: 20px;
 }
 
 .breeding-panel h3 {

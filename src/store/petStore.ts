@@ -17,6 +17,7 @@ interface PetStore {
   selectPet: (petId: string | null) => void
   useItem: (petId: string, itemId: string) => void
   breedPets: (parentAId: string, parentBId: string) => void
+  renamePet: (petId: string, name: string) => void
   resetGame: () => void
 }
 
@@ -198,6 +199,13 @@ export const usePetStore = create<PetStore>((set) => ({
         pets: { ...state.pets, [id]: kitten },
         selectedPetId: id,
       }
+    }),
+
+  renamePet: (petId, name) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet) return state
+      return { pets: { ...state.pets, [petId]: { ...pet, name } } }
     }),
 
   resetGame: () => {
