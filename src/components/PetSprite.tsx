@@ -1,25 +1,16 @@
 import type { Pet } from '../types/pet'
-import { useTailChain } from '../game/useTailChain'
 import { useDraggable } from '../game/useDraggable'
 import { usePetStore } from '../store/petStore'
 import { deriveAppearance } from '../game/appearance'
 import { mousePosition } from '../game/mousePosition'
+import { getTailAnchorLocal, getTailMood } from '../game/tailMood'
+import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
 
 interface PetSpriteProps {
   pet: Pet
   selected: boolean
 }
 
-const SVG_WIDTH = 80
-const SVG_HEIGHT = 60
-const TAIL_SEGMENTS = 6
-const TAIL_LINK_LENGTH = 6
-
-// Fixed attach point (in the SVG's own local coordinates, always drawn as
-// if facing right) where the tail meets the body. Facing left/right is
-// handled purely by CSS-flipping the whole SVG, so this point never needs
-// to change based on facing — see the render code below.
-const TAIL_ANCHOR_LOCAL = { x: 14, y: 28 }
 const HEAD_PIVOT_LOCAL = { x: 44, y: 32 }
 
 const LEG_X_POSITIONS = [14, 24, 40, 50]
@@ -36,38 +27,16 @@ const SPOT_POSITIONS = [
 
 const ATTENTION_RADIUS = 260
 const MAX_HEAD_TILT_DEG = 14
-const TAIL_RAISE_PX = 6
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-// A simple first pass at mood-driven tail carriage, using only the stats
-// we have today (needs + current action). 'agitated' -> a sharp flick;
-// 'content' -> tail carried up; 'neutral' -> the calm resting sway/trail.
-// A real attention/mood system (M14+) can replace this with richer inputs
-// without changing how PetSprite consumes the result.
-type TailMood = 'content' | 'neutral' | 'agitated'
-
-function getTailMood(pet: Pet): TailMood {
-  if (pet.action === 'playing') return 'agitated'
-  if (pet.needs.hunger < 30 || pet.needs.happiness < 30) return 'agitated'
-  if (pet.needs.happiness > 70 && pet.action !== 'walking') return 'content'
-  return 'neutral'
-}
-
 export function PetSprite({ pet, selected }: PetSpriteProps) {
-  const tailMood = getTailMood(pet)
-  const tailAnchorLocal = {
-    x: TAIL_ANCHOR_LOCAL.x,
-    y: tailMood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y,
-  }
-  const anchorWorld = {
-    x: pet.position.x + tailAnchorLocal.x,
-    y: pet.position.y + tailAnchorLocal.y,
-  }
-  const tailWorld = useTailChain(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH, pet.facing, pet.position.x, SVG_WIDTH)
+  const tailWorld = usePetStore((state) => state.tailSegments[pet.id]) ?? []
   const tailLocal = tailWorld.map((p) => ({ x: p.x - pet.position.x, y: p.y - pet.position.y }))
+  const tailAnchorLocal = getTailAnchorLocal(pet)
+  const tailMood = getTailMood(pet)
 
   const isWalking = pet.action === 'walking'
   const isIdleLike = !isWalking
@@ -102,13 +71,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
   return (
     <div
-      className={[
-        'pet-sprite',
-        selected && 'selected',
-        isHeld && 'dragging',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={['pet-sprite', selected && 'selected', isHeld && 'dragging'].filter(Boolean).join(' ')}
       style={{ left: pet.position.x, top: pet.position.y }}
       title={pet.name}
       onPointerDown={onPointerDown}

@@ -7,9 +7,16 @@ import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
+import { getTailAnchorLocal } from '../game/tailMood'
+import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
+import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 
 interface PetStore {
   pets: Record<string, Pet>
+  // Tail chain positions in scene coordinates, one array per pet — kept
+  // here (not component state) so they keep relaxing every real frame even
+  // for pets that aren't currently moving. See tailPhysics.ts for why.
+  tailSegments: Record<string, Point[]>
   sceneBounds: { width: number; height: number }
   decayAccumulatorMs: number
   selectedPetId: string | null
@@ -121,6 +128,7 @@ function loadInitialPets(): Record<string, Pet> {
 
 export const usePetStore = create<PetStore>((set) => ({
   pets: loadInitialPets(),
+  tailSegments: {},
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
   selectedPetId: null,
@@ -149,7 +157,23 @@ export const usePetStore = create<PetStore>((set) => ({
         moved[id] = movePet(decided, deltaMs)
       }
 
-      return { pets: moved, decayAccumulatorMs: accumulator }
+      // Tail physics run every frame for every pet, regardless of whether
+      // that pet actually moved this tick — see tailPhysics.ts.
+      const tailSegments: Record<string, Point[]> = {}
+      for (const id in moved) {
+        const pet = moved[id]
+        const previousPet = state.pets[id]
+        const anchorLocal = getTailAnchorLocal(pet)
+        const anchorWorld = { x: pet.position.x + anchorLocal.x, y: pet.position.y + anchorLocal.y }
+
+        let segments = state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
+        if (previousPet && previousPet.facing !== pet.facing) {
+          segments = mirrorSegments(segments, pet.position.x, SVG_WIDTH)
+        }
+        tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
+      }
+
+      return { pets: moved, decayAccumulatorMs: accumulator, tailSegments }
     }),
 
   selectPet: (petId) => set({ selectedPetId: petId }),
@@ -239,7 +263,7 @@ export const usePetStore = create<PetStore>((set) => ({
 
   resetGame: () => {
     clearSavedGame()
-    set({ pets: freshStarterPets(), selectedPetId: null })
+    set({ pets: freshStarterPets(), tailSegments: {}, selectedPetId: null })
   },
 }))
 
