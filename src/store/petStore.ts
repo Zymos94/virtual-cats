@@ -7,7 +7,7 @@ import { updatePetBehavior } from '../game/behaviorFSM'
 import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
-import { ITEM_PERCEPTION_RADIUS, wantsItem } from '../game/itemWants'
+import { attentionScore, itemUrgency, socialUrgency, type AttentionTarget } from '../game/attention'
 import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
@@ -47,9 +47,14 @@ const DECAY_PER_SECOND: Needs = { hunger: -0.5, energy: -0.3, hygiene: -0.2, hap
 const PLACE_DROP_HEIGHT = 24
 const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
 const MAX_LIFT = 600 // px/s cap, so a very fast swipe doesn't launch it absurdly high
+const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is free, shouldn't outshine toys
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, value))
+}
+
+function clampAttentionSpan(value: number): number {
+  return Math.max(150, Math.min(450, value))
 }
 
 function releaseClaim(
@@ -58,6 +63,25 @@ function releaseClaim(
 ): Record<string, PlacedItem> {
   if (!itemId || !sceneItems[itemId]) return sceneItems
   return { ...sceneItems, [itemId]: { ...sceneItems[itemId], claimedBy: null } }
+}
+
+// Called when `petId` gets interrupted (picked up, put away). Releases the
+// social claim it was holding on someone else (if it was mid-approach),
+// and — the other direction — clears any OTHER cat's targetPetId that was
+// pointed at petId, so that cat doesn't keep chasing a partner who just
+// vanished from the room.
+function releaseSocialClaims(pets: Record<string, Pet>, petId: string): Record<string, Pet> {
+  let result = pets
+  const pet = result[petId]
+  if (pet?.targetPetId && result[pet.targetPetId]) {
+    result = { ...result, [pet.targetPetId]: { ...result[pet.targetPetId], socialClaimedBy: null } }
+  }
+  for (const otherId in result) {
+    if (otherId !== petId && result[otherId].targetPetId === petId) {
+      result = { ...result, [otherId]: { ...result[otherId], targetPetId: null } }
+    }
+  }
+  return result
 }
 
 function applyDecay(pet: Pet): Pet {
@@ -88,6 +112,9 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     parentIds: null,
     inSuitcase: false,
     targetItemId: null,
+    attentionSpan: 300,
+    targetPetId: null,
+    socialClaimedBy: null,
     ...overrides,
   }
 }
@@ -97,6 +124,7 @@ const starterPets: Pet[] = [
     id: 'pet-1',
     name: 'Whiskers',
     position: { x: 120, y: 90 },
+    attentionSpan: 320,
     genetics: {
       furColor: homozygous('orange'),
       pattern: homozygous('solid'),
@@ -108,6 +136,7 @@ const starterPets: Pet[] = [
     id: 'pet-2',
     name: 'Mittens',
     position: { x: 320, y: 140 },
+    attentionSpan: 260,
     genetics: {
       furColor: homozygous('gray'),
       pattern: homozygous('spotted'),
@@ -119,6 +148,7 @@ const starterPets: Pet[] = [
     id: 'pet-3',
     name: 'Tom',
     position: { x: 460, y: 60 },
+    attentionSpan: 380,
     genetics: {
       furColor: homozygous('cream'),
       pattern: homozygous('solid'),
@@ -144,6 +174,9 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     actionStartedAt: 0,
     inSuitcase: pet.inSuitcase ?? false,
     targetItemId: null,
+    attentionSpan: pet.attentionSpan ?? 300,
+    targetPetId: null,
+    socialClaimedBy: null,
   }
 }
 
@@ -213,6 +246,14 @@ export const usePetStore = create<PetStore>((set) => ({
         if (sceneItems[itemId].claimedBy) claimed.add(itemId)
       }
 
+      // Cats already being approached by someone (from a previous tick, or
+      // newly claimed below) are excluded as candidates for anyone else.
+      const socialClaimed = new Set<string>()
+      for (const petId in pets) {
+        if (pets[petId].socialClaimedBy) socialClaimed.add(petId)
+      }
+      const newSocialClaims: Record<string, string> = {} // targetPetId -> claimerId
+
       const moved: Record<string, Pet> = {}
       for (const id in pets) {
         const pet = pets[id]
@@ -221,33 +262,67 @@ export const usePetStore = create<PetStore>((set) => ({
           continue
         }
 
-        const nearbyWantedItems = Object.values(sceneItems)
-          .filter((item) => !claimed.has(item.id))
-          .filter((item) => {
-            const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
-            if (!definition || !wantsItem(pet, definition)) return false
-            return Math.hypot(item.position.x - pet.position.x, item.position.y - pet.position.y) < ITEM_PERCEPTION_RADIUS
-          })
-          .sort(
-            (a, b) =>
-              Math.hypot(a.position.x - pet.position.x, a.position.y - pet.position.y) -
-              Math.hypot(b.position.x - pet.position.x, b.position.y - pet.position.y),
-          )
+        // Find the single best thing this pet wants right now — an item or
+        // another cat — scoring both through the same urgency*proximity
+        // function so they compete on equal footing. See attention.ts.
+        let bestTarget: AttentionTarget | null = null
+        let bestScore = 0
 
-        let decided = updatePetBehavior(pet, { now, sceneBounds: state.sceneBounds, nearbyWantedItems })
+        for (const item of Object.values(sceneItems)) {
+          if (claimed.has(item.id)) continue
+          const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
+          if (!definition) continue
+          const urgency = itemUrgency(pet, definition)
+          const distance = Math.hypot(item.position.x - pet.position.x, item.position.y - pet.position.y)
+          const score = attentionScore(urgency, distance, pet.attentionSpan)
+          if (score > bestScore) {
+            bestScore = score
+            bestTarget = { kind: 'item', id: item.id, position: item.position }
+          }
+        }
+
+        const ownSocialUrgency = socialUrgency(pet)
+        if (ownSocialUrgency > 0) {
+          for (const otherId in pets) {
+            if (otherId === id || socialClaimed.has(otherId)) continue
+            const other = pets[otherId]
+            if (other.inSuitcase || other.action === 'held' || other.action === 'playing') continue
+            const distance = Math.hypot(other.position.x - pet.position.x, other.position.y - pet.position.y)
+            const score = attentionScore(ownSocialUrgency, distance, pet.attentionSpan)
+            if (score > bestScore) {
+              bestScore = score
+              bestTarget = { kind: 'cat', id: otherId, position: other.position }
+            }
+          }
+        }
+
+        let decided = updatePetBehavior(pet, { now, sceneBounds: state.sceneBounds, bestTarget })
 
         if (decided.targetItemId && decided.targetItemId !== pet.targetItemId) {
           claimed.add(decided.targetItemId)
           const claimedItem = sceneItems[decided.targetItemId]
           if (claimedItem) sceneItems[decided.targetItemId] = { ...claimedItem, claimedBy: id }
         }
+        if (decided.targetPetId && decided.targetPetId !== pet.targetPetId) {
+          socialClaimed.add(decided.targetPetId)
+          newSocialClaims[decided.targetPetId] = id
+        }
 
-        // Keep chasing a moving target (e.g. a rolling ball) by re-aiming
-        // at its current position every frame, rather than the stale spot
-        // it was at the moment it got claimed.
+        // Keep chasing a moving target (e.g. a rolling ball, or a cat that
+        // hasn't noticed it's being approached yet) by re-aiming at its
+        // current position every frame, rather than the stale spot it was
+        // at the moment it got claimed.
         if (decided.action === 'walking' && decided.targetItemId) {
           const target = sceneItems[decided.targetItemId]
           if (target) decided = { ...decided, destination: target.position }
+        } else if (decided.action === 'walking' && decided.targetPetId) {
+          const target = pets[decided.targetPetId]
+          if (target && !target.inSuitcase) {
+            decided = { ...decided, destination: { x: target.position.x + 50, y: target.position.y } }
+          } else {
+            // Target vanished (picked up, put away) — give up and reconsider.
+            decided = { ...decided, action: 'idle', destination: null, targetPetId: null }
+          }
         }
 
         let finalPet = movePet(decided, deltaMs)
@@ -278,6 +353,43 @@ export const usePetStore = create<PetStore>((set) => ({
         moved[id] = finalPet
       }
 
+      // Apply newly-made social claims so the claimed cat waits in place
+      // starting next tick, and shows up excluded for anyone else.
+      for (const targetId in newSocialClaims) {
+        if (moved[targetId]) moved[targetId] = { ...moved[targetId], socialClaimedBy: newSocialClaims[targetId] }
+      }
+
+      // Mutual arrival: a pet that just finished walking toward another cat
+      // (rather than an item) triggers shared 'playing' for both of them —
+      // this needs the full `moved` record for the OTHER pet, which may not
+      // have been processed yet during the loop above, so it's a separate
+      // pass over the now-complete result.
+      for (const id in moved) {
+        const before = pets[id]
+        const after = moved[id]
+        if (before?.action === 'walking' && after.action === 'idle' && after.targetPetId) {
+          const partner = moved[after.targetPetId]
+          if (partner && !partner.inSuitcase && partner.action !== 'held' && partner.action !== 'playing') {
+            moved[id] = {
+              ...after,
+              action: 'playing',
+              actionStartedAt: now,
+              needs: { ...after.needs, happiness: clamp(after.needs.happiness + SOCIAL_HAPPINESS_BOOST) },
+            }
+            moved[after.targetPetId] = {
+              ...partner,
+              action: 'playing',
+              actionStartedAt: now,
+              targetPetId: id,
+              socialClaimedBy: null,
+              needs: { ...partner.needs, happiness: clamp(partner.needs.happiness + SOCIAL_HAPPINESS_BOOST) },
+            }
+          } else {
+            moved[id] = { ...after, targetPetId: null }
+          }
+        }
+      }
+
       // Tail physics run every frame for every non-suitcased pet, regardless
       // of whether that pet actually moved this tick — see tailPhysics.ts.
       const tailSegments: Record<string, Point[]> = {}
@@ -304,8 +416,9 @@ export const usePetStore = create<PetStore>((set) => ({
     set((state) => {
       const pet = state.pets[petId]
       if (!pet) return state
+      const pets = releaseSocialClaims(state.pets, petId)
       return {
-        pets: { ...state.pets, [petId]: { ...pet, action: 'held', destination: null, targetItemId: null } },
+        pets: { ...pets, [petId]: { ...pets[petId], action: 'held', destination: null, targetItemId: null, targetPetId: null } },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
     }),
@@ -330,10 +443,18 @@ export const usePetStore = create<PetStore>((set) => ({
     set((state) => {
       const pet = state.pets[petId]
       if (!pet) return state
+      const pets = releaseSocialClaims(state.pets, petId)
       return {
         pets: {
-          ...state.pets,
-          [petId]: { ...pet, inSuitcase: true, action: 'idle', destination: null, targetItemId: null },
+          ...pets,
+          [petId]: {
+            ...pets[petId],
+            inSuitcase: true,
+            action: 'idle',
+            destination: null,
+            targetItemId: null,
+            targetPetId: null,
+          },
         },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
         selectedPetId: state.selectedPetId === petId ? null : state.selectedPetId,
@@ -440,6 +561,12 @@ export const usePetStore = create<PetStore>((set) => ({
         parentIds: [parentA.id, parentB.id],
         inSuitcase: false,
         targetItemId: null,
+        // Not part of the formal genetics system — just a simple average
+        // of the parents' attention spans with a little random variation,
+        // enough for kittens to feel like they take after their parents.
+        attentionSpan: clampAttentionSpan((parentA.attentionSpan + parentB.attentionSpan) / 2 + (Math.random() * 60 - 30)),
+        targetPetId: null,
+        socialClaimedBy: null,
       }
 
       return {

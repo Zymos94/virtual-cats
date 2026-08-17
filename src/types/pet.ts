@@ -28,4 +28,15 @@ export interface Pet {
   // Set while walking toward a dropped item it wants to use — cleared on
   // arrival (consumption) or on interruption (picked up, put away).
   targetItemId: string | null
+  // How far this cat notices things (items or other cats) worth reacting
+  // to. A personal trait, not a fixed global constant, so cats can differ.
+  attentionSpan: number
+  // Set while walking toward another cat to play, and again (pointing at
+  // each other) for the duration of mutual 'playing' once they meet.
+  targetPetId: string | null
+  // Set on a cat that another cat is currently approaching for play — a
+  // simple exclusivity lock (like an item's claimedBy) so a lonely cat
+  // doesn't get beelined-at by two others at once. Also makes the claimed
+  // cat wait in place rather than wander off mid-approach.
+  socialClaimedBy: string | null
 }

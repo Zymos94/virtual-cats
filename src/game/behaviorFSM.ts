@@ -1,21 +1,26 @@
 import type { Pet } from '../types/pet'
-import type { PlacedItem } from '../types/item'
+import type { AttentionTarget } from './attention'
 import { randomPointInBounds } from './movement'
 import { WALL_BAND_FRACTION } from './roomLayout'
 
 interface TickContext {
   now: number
   sceneBounds: { width: number; height: number }
-  // Unclaimed items this pet currently wants, nearest first — already
-  // filtered/sorted by petStore.tick() since that's where the full picture
-  // of all pets and items lives. This function just picks the nearest one.
-  nearbyWantedItems: PlacedItem[]
+  // The single highest-scoring thing this pet currently wants — an item or
+  // another cat — already resolved by petStore.tick() since that's where
+  // the full picture of all pets and items lives. Null means nothing
+  // nearby is worth breaking off a random wander for.
+  bestTarget: AttentionTarget | null
 }
 
 const SLEEP_DURATION_MS = 6000
 const IDLE_PAUSE_MS = 2000
 const EATING_DURATION_MS = 2500
 const PLAYING_DURATION_MS = 3000
+const SOCIAL_PLAYING_DURATION_MS = 4000
+// How far beside the other cat to walk to, rather than exactly on top of
+// it — sprites shouldn't fully overlap when they "meet up".
+const SOCIAL_APPROACH_OFFSET = 50
 
 // Decides what a pet should be doing next. Pure function: Pet -> Pet, no
 // side effects. Movement itself happens separately in movement.ts, driven
@@ -26,6 +31,11 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       if (pet.needs.energy < 20) {
         return { ...pet, action: 'sleeping', actionStartedAt: ctx.now }
       }
+      // Someone else is on their way over to play — wait here instead of
+      // wandering off and making them chase forever.
+      if (pet.socialClaimedBy) {
+        return pet
+      }
       // Pause briefly before wandering again, rather than instantly
       // picking a new destination — gives the idle tail-sway a moment
       // to actually show, and reads as a pet pausing to look around.
@@ -33,13 +43,17 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
         return pet
       }
 
-      const wanted = ctx.nearbyWantedItems[0]
-      if (wanted) {
+      if (ctx.bestTarget) {
+        const isCat = ctx.bestTarget.kind === 'cat'
+        const destination = isCat
+          ? { x: ctx.bestTarget.position.x + SOCIAL_APPROACH_OFFSET, y: ctx.bestTarget.position.y }
+          : ctx.bestTarget.position
         return {
           ...pet,
           action: 'walking',
-          destination: wanted.position,
-          targetItemId: wanted.id,
+          destination,
+          targetItemId: isCat ? null : ctx.bestTarget.id,
+          targetPetId: isCat ? ctx.bestTarget.id : null,
           actionStartedAt: ctx.now,
         }
       }
@@ -50,13 +64,14 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
         action: 'walking',
         destination: randomPointInBounds(ctx.sceneBounds, 60, topMargin),
         targetItemId: null,
+        targetPetId: null,
         actionStartedAt: ctx.now,
       }
     }
     case 'walking': {
       if (!pet.destination) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
       const dist = Math.hypot(pet.destination.x - pet.position.x, pet.destination.y - pet.position.y)
-      if (dist < 2) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      if (dist < 4) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
       return pet
     }
     case 'sleeping': {
@@ -65,9 +80,12 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
       return pet
     }
-    // 'eating' and 'playing' are triggered when a pet arrives at its
-    // targetItemId (see petStore.tick's arrival/consumption step) — here we
-    // just time them back out to idle.
+    // 'eating' is triggered when a pet arrives at its targetItemId (see
+    // petStore.tick's arrival/consumption step); 'playing' is triggered
+    // either that same way (a toy) or by mutually arriving at another cat
+    // (see petStore.tick's social-arrival pass) — here we just time both
+    // back out to idle. A social 'playing' (targetPetId still set, pointing
+    // at the other cat) runs a bit longer than solo toy play.
     case 'eating': {
       if (ctx.now - pet.actionStartedAt > EATING_DURATION_MS) {
         return { ...pet, action: 'idle', actionStartedAt: ctx.now }
@@ -75,8 +93,9 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       return pet
     }
     case 'playing': {
-      if (ctx.now - pet.actionStartedAt > PLAYING_DURATION_MS) {
-        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
+      const duration = pet.targetPetId ? SOCIAL_PLAYING_DURATION_MS : PLAYING_DURATION_MS
+      if (ctx.now - pet.actionStartedAt > duration) {
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now, targetPetId: null }
       }
       return pet
     }
