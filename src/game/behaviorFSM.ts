@@ -1,6 +1,7 @@
 import type { Pet } from '../types/pet'
 import type { PlacedItem } from '../types/item'
 import { randomPointInBounds } from './movement'
+import { WALL_BAND_FRACTION } from './roomLayout'
 
 interface TickContext {
   now: number
@@ -15,10 +16,6 @@ const SLEEP_DURATION_MS = 6000
 const IDLE_PAUSE_MS = 2000
 const EATING_DURATION_MS = 2500
 const PLAYING_DURATION_MS = 3000
-
-// Matches the wall-band height in App.css's room background — keeps
-// wandering destinations on the floor instead of "inside" the wall.
-const WALL_BAND_FRACTION = 0.18
 
 // Decides what a pet should be doing next. Pure function: Pet -> Pet, no
 // side effects. Movement itself happens separately in movement.ts, driven

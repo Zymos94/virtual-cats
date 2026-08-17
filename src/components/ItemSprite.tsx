@@ -15,9 +15,9 @@ export function ItemSprite({ placedItem }: ItemSpriteProps) {
   const lastMoveRef = useRef<{ x: number; y: number; t: number } | null>(null)
   const velocityRef = useRef({ x: 0, y: 0 })
 
-  // Only physics-enabled items (the ball) are pickup-and-throwable; this
-  // hook is still called unconditionally (rules of hooks), just unused for
-  // static items.
+  // Every item is draggable/throwable now — what happens next (how far it
+  // slides, whether it bounces) comes from its own physics profile, not
+  // whether dragging is enabled at all.
   const { onPointerDown } = useDraggable(() => placedItem.position, {
     onDragStart: () => {
       lastMoveRef.current = { ...placedItem.position, t: performance.now() }
@@ -49,14 +49,27 @@ export function ItemSprite({ placedItem }: ItemSpriteProps) {
 
   if (!definition) return null
 
+  const shadowScale = Math.max(0.4, 1 - placedItem.height / 120)
+
   return (
-    <div
-      className={definition.physics ? 'item-sprite item-sprite-draggable' : 'item-sprite'}
-      style={{ left: placedItem.position.x, top: placedItem.position.y }}
-      title={definition.name}
-      onPointerDown={definition.physics ? onPointerDown : undefined}
-    >
-      {definition.icon}
-    </div>
+    <>
+      <div
+        className="item-shadow"
+        style={{
+          left: placedItem.position.x,
+          top: placedItem.position.y,
+          transform: `scale(${shadowScale})`,
+          opacity: shadowScale * 0.35,
+        }}
+      />
+      <div
+        className="item-sprite"
+        style={{ left: placedItem.position.x, top: placedItem.position.y - placedItem.height }}
+        title={definition.name}
+        onPointerDown={onPointerDown}
+      >
+        {definition.icon}
+      </div>
+    </>
   )
 }

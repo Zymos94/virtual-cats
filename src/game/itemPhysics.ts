@@ -1,65 +1,106 @@
-import type { PlacedItem } from '../types/item'
+import type { PhysicsProfile, PlacedItem } from '../types/item'
+import { WALL_BAND_FRACTION } from './roomLayout'
 
-const FRICTION_PER_SEC = 0.06 // fraction of velocity retained per second
-const STOP_THRESHOLD = 8 // px/sec — below this, just stop
-const RESTITUTION = 0.55 // velocity kept after bouncing off a wall
-const MARGIN = 16 // keeps the item's icon fully inside the room
+const GRAVITY = 1800 // px/s^2, constantly pulls height back toward the floor
+const Z_STOP_THRESHOLD = 20 // px/s vertical speed — below this on landing, it's fully settled
+const XY_STOP_THRESHOLD = 6 // px/s ground speed — below this, snap to a full stop
+const MARGIN = 16 // keeps the item's icon fully inside the room's side/front edges
+// Belt-and-suspenders cap alongside useGameLoop's deltaMs clamp — no throw
+// in this room should ever need to arc higher than this.
+const MAX_HEIGHT = 400
 
-// Used while an item is actively being dragged, so it can't be released
-// past the boundary and get an artificial "instant max-strength bounce" on
-// the very next physics step — it should visually stop at the wall while
-// you're still holding it, same as it would while rolling on its own.
+// Same floor-plane bound pets wander within — an item resting or rolling
+// on the ground never sits "inside" the wall band behind it.
+function floorBounds(bounds: { width: number; height: number }) {
+  return {
+    left: MARGIN,
+    right: bounds.width - MARGIN,
+    top: bounds.height * WALL_BAND_FRACTION + MARGIN,
+    bottom: bounds.height - MARGIN,
+  }
+}
+
 export function clampToRoom(
   position: { x: number; y: number },
   bounds: { width: number; height: number },
 ): { x: number; y: number } {
+  const floor = floorBounds(bounds)
   return {
-    x: Math.min(Math.max(position.x, MARGIN), bounds.width - MARGIN),
-    y: Math.min(Math.max(position.y, MARGIN), bounds.height - MARGIN),
+    x: Math.min(Math.max(position.x, floor.left), floor.right),
+    y: Math.min(Math.max(position.y, floor.top), floor.bottom),
   }
 }
 
-// Advances a rolling item by one frame: moves it by velocity * time, decays
-// velocity via friction, bounces off the room's edges, and snaps to a full
-// stop once it's slow enough that continuing to simulate it would just be
-// visually imperceptible sliding.
+// Advances one physics frame for a placed item, using its material profile:
+//
+// - Height/gravity axis: a thrown item arcs upward then falls, same as a
+//   real toss, and settles on the floor after zero or more bounces
+//   (bounciness=0 means it just lands and stops — no bounce at all).
+// - Ground (x,y) axis: always the item's floor position, kept within the
+//   room's floor plane (below the wall band) via bounces off the side/
+//   front/back edges. Friction only slows it down once it's actually
+//   resting on the floor — while airborne it keeps its throw momentum,
+//   like a real projectile.
 export function stepItemPhysics(
   item: PlacedItem,
+  profile: PhysicsProfile,
   deltaMs: number,
   bounds: { width: number; height: number },
 ): PlacedItem {
   if (item.held) return item
 
-  const speed = Math.hypot(item.velocity.x, item.velocity.y)
-  if (speed < STOP_THRESHOLD) {
-    return speed === 0 ? item : { ...item, velocity: { x: 0, y: 0 } }
+  const dt = deltaMs / 1000
+
+  let height = item.height
+  let vz = item.verticalVelocity
+  if (height > 0 || vz !== 0) {
+    vz -= GRAVITY * dt
+    height += vz * dt
+    if (height <= 0) {
+      height = 0
+      vz = Math.abs(vz) < Z_STOP_THRESHOLD ? 0 : -vz * profile.bounciness
+    } else if (height > MAX_HEIGHT) {
+      height = MAX_HEIGHT
+      vz = Math.min(vz, 0)
+    }
   }
 
-  const dt = deltaMs / 1000
-  let x = item.position.x + item.velocity.x * dt
-  let y = item.position.y + item.velocity.y * dt
+  let x = item.position.x
+  let y = item.position.y
   let vx = item.velocity.x
   let vy = item.velocity.y
 
-  if (x < MARGIN) {
-    x = MARGIN
-    vx = -vx * RESTITUTION
-  } else if (x > bounds.width - MARGIN) {
-    x = bounds.width - MARGIN
-    vx = -vx * RESTITUTION
+  if (vx !== 0 || vy !== 0) {
+    x += vx * dt
+    y += vy * dt
+
+    const floor = floorBounds(bounds)
+    if (x < floor.left) {
+      x = floor.left
+      vx = -vx * profile.bounciness
+    } else if (x > floor.right) {
+      x = floor.right
+      vx = -vx * profile.bounciness
+    }
+    if (y < floor.top) {
+      y = floor.top
+      vy = -vy * profile.bounciness
+    } else if (y > floor.bottom) {
+      y = floor.bottom
+      vy = -vy * profile.bounciness
+    }
+
+    // Grounded (not mid-bounce, not airborne) — friction takes over.
+    if (height === 0 && vz === 0) {
+      const decay = Math.pow(1 - profile.friction, dt)
+      vx *= decay
+      vy *= decay
+      if (Math.hypot(vx, vy) < XY_STOP_THRESHOLD) {
+        vx = 0
+        vy = 0
+      }
+    }
   }
 
-  if (y < MARGIN) {
-    y = MARGIN
-    vy = -vy * RESTITUTION
-  } else if (y > bounds.height - MARGIN) {
-    y = bounds.height - MARGIN
-    vy = -vy * RESTITUTION
-  }
-
-  const decay = Math.pow(FRICTION_PER_SEC, dt)
-  vx *= decay
-  vy *= decay
-
-  return { ...item, position: { x, y }, velocity: { x: vx, y: vy } }
+  return { ...item, position: { x, y }, velocity: { x: vx, y: vy }, height, verticalVelocity: vz }
 }

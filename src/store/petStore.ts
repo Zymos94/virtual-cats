@@ -44,6 +44,10 @@ interface PetStore {
 const DECAY_INTERVAL_MS = 1000
 const DECAY_PER_SECOND: Needs = { hunger: -0.5, energy: -0.3, hygiene: -0.2, happiness: -0.2 }
 
+const PLACE_DROP_HEIGHT = 24
+const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
+const MAX_LIFT = 600 // px/s cap, so a very fast swipe doesn't launch it absurdly high
+
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, value))
 }
@@ -152,7 +156,14 @@ function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<str
 
   const sceneItems: Record<string, PlacedItem> = {}
   for (const id in saved.sceneItems ?? {}) {
-    sceneItems[id] = { ...saved.sceneItems[id], claimedBy: null, held: false, velocity: { x: 0, y: 0 } }
+    sceneItems[id] = {
+      ...saved.sceneItems[id],
+      claimedBy: null,
+      held: false,
+      velocity: { x: 0, y: 0 },
+      height: 0,
+      verticalVelocity: 0,
+    }
   }
 
   return { pets, sceneItems }
@@ -193,7 +204,9 @@ export const usePetStore = create<PetStore>((set) => ({
       for (const itemId in state.sceneItems) {
         const item = state.sceneItems[itemId]
         const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
-        sceneItems[itemId] = definition?.physics ? stepItemPhysics(item, deltaMs, state.sceneBounds) : item
+        sceneItems[itemId] = definition
+          ? stepItemPhysics(item, definition.physics, deltaMs, state.sceneBounds)
+          : item
       }
       const claimed = new Set<string>()
       for (const itemId in sceneItems) {
@@ -241,11 +254,13 @@ export const usePetStore = create<PetStore>((set) => ({
 
         // Arrived at a targeted item this tick — consume it: apply its
         // effect, switch to an eating/playing animation, and remove it
-        // from the room.
+        // from the room. If it's still airborne (mid-bounce, or the player
+        // just re-threw it), don't "eat" something floating above the
+        // floor — just give up this attempt and reconsider next cycle.
         if (pet.action === 'walking' && finalPet.action === 'idle' && finalPet.targetItemId) {
           const placedItem = sceneItems[finalPet.targetItemId]
           const definition = placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
-          if (placedItem && definition) {
+          if (placedItem && definition && placedItem.height <= 0.5) {
             let needs = finalPet.needs
             for (const key in definition.effect) {
               const need = key as keyof Needs
@@ -340,7 +355,19 @@ export const usePetStore = create<PetStore>((set) => ({
   placeItem: (itemTypeId, position) =>
     set((state) => {
       const id = nanoid()
-      const placedItem: PlacedItem = { id, itemTypeId, position, claimedBy: null, velocity: { x: 0, y: 0 }, held: false }
+      // A small starting height so every placed item visibly drops onto
+      // the floor rather than just appearing there — reinforces that it
+      // actually exists in the room's space, not just painted on the rug.
+      const placedItem: PlacedItem = {
+        id,
+        itemTypeId,
+        position,
+        height: PLACE_DROP_HEIGHT,
+        velocity: { x: 0, y: 0 },
+        verticalVelocity: 0,
+        claimedBy: null,
+        held: false,
+      }
       return { sceneItems: { ...state.sceneItems, [id]: placedItem } }
     }),
 
@@ -349,7 +376,10 @@ export const usePetStore = create<PetStore>((set) => ({
       const item = state.sceneItems[itemId]
       if (!item) return state
       return {
-        sceneItems: { ...state.sceneItems, [itemId]: { ...item, held: true, velocity: { x: 0, y: 0 }, claimedBy: null } },
+        sceneItems: {
+          ...state.sceneItems,
+          [itemId]: { ...item, held: true, velocity: { x: 0, y: 0 }, height: 0, verticalVelocity: 0, claimedBy: null },
+        },
       }
     }),
 
@@ -361,11 +391,29 @@ export const usePetStore = create<PetStore>((set) => ({
       return { sceneItems: { ...state.sceneItems, [itemId]: { ...item, position } } }
     }),
 
-  endDragItem: (itemId, velocity) =>
+  // `throwVelocity` is the raw swipe velocity computed from the pointer
+  // drag. Heavier items get proportionally less speed from the same
+  // swipe, and every throw gets some automatic upward lift (like a real
+  // toss) so it arcs up and falls back down under gravity instead of
+  // sliding flat along the floor.
+  endDragItem: (itemId, throwVelocity) =>
     set((state) => {
       const item = state.sceneItems[itemId]
       if (!item) return state
-      return { sceneItems: { ...state.sceneItems, [itemId]: { ...item, held: false, velocity } } }
+      const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
+      const mass = definition?.physics.mass ?? 1
+
+      const vx = throwVelocity.x / mass
+      const vy = throwVelocity.y / mass
+      const horizontalSpeed = Math.hypot(vx, vy)
+      const verticalVelocity = Math.min(horizontalSpeed * LIFT_RATIO, MAX_LIFT)
+
+      return {
+        sceneItems: {
+          ...state.sceneItems,
+          [itemId]: { ...item, held: false, velocity: { x: vx, y: vy }, verticalVelocity },
+        },
+      }
     }),
 
   breedPets: (parentAId, parentBId) =>

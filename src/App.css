@@ -313,12 +313,21 @@
   border: 2px solid var(--border);
   border-radius: 50%;
   box-shadow: var(--shadow);
-}
-
-.item-sprite-draggable {
   cursor: grab;
   touch-action: none;
   user-select: none;
+  z-index: 2;
+}
+
+.item-shadow {
+  position: absolute;
+  width: 32px;
+  height: 12px;
+  margin-top: 26px;
+  background: #000;
+  border-radius: 50%;
+  filter: blur(1px);
+  pointer-events: none;
 }
 
 .breeding-panel h3 {
