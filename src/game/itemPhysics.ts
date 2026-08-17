@@ -31,6 +31,12 @@ export function clampToRoom(
   }
 }
 
+// TODO(maps): friction/bounciness currently come only from the item's own
+// profile — there's no notion of what the floor itself is made of yet
+// (tile vs. carpet vs. grass). Once rooms/maps exist, the floor should
+// contribute its own friction (and maybe bounciness) that combines with
+// the item's, so the same ball rolls differently on carpet vs. hardwood.
+
 // Advances one physics frame for a placed item, using its material profile:
 //
 // - Height/gravity axis: a thrown item arcs upward then falls, same as a
@@ -82,9 +88,16 @@ export function stepItemPhysics(
       x = floor.right
       vx = -vx * profile.bounciness
     }
-    if (y < floor.top) {
+
+    // The horizon (back wall boundary) only constrains the item once it's
+    // actually resting on the floor — while airborne it can freely sail
+    // into that space above/behind the horizon line, same as a ball
+    // thrown up toward the back of a real room. Gravity always brings it
+    // down eventually; once it lands, it's pulled back onto the floor
+    // plane rather than resting "inside" the wall.
+    if (height <= 0 && y < floor.top) {
       y = floor.top
-      vy = -vy * profile.bounciness
+      vy = 0
     } else if (y > floor.bottom) {
       y = floor.bottom
       vy = -vy * profile.bounciness
