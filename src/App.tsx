@@ -3,7 +3,7 @@ import { useSceneBounds } from './game/useSceneBounds'
 import { usePetStore } from './store/petStore'
 import { Scene } from './components/Scene'
 import { StatBar } from './components/StatBar'
-import { Inventory } from './components/Inventory'
+import { Suitcase } from './components/Suitcase'
 import { BreedingPanel } from './components/BreedingPanel'
 import { SaveLoadControls } from './components/SaveLoadControls'
 import './App.css'
@@ -16,9 +16,12 @@ function App() {
   const selectedPetId = usePetStore((state) => state.selectedPetId)
   const selectedPet = selectedPetId ? pets[selectedPetId] : null
 
+  const roomPets = Object.values(pets).filter((pet) => !pet.inSuitcase)
+  const suitcasedPets = Object.values(pets).filter((pet) => pet.inSuitcase)
+
   return (
     <div className="app">
-      <Scene pets={Object.values(pets)} selectedPetId={selectedPetId} />
+      <Scene pets={roomPets} selectedPetId={selectedPetId} />
 
       <div className="top-bar">
         <h1>Virtual Cats</h1>
@@ -45,8 +48,8 @@ function App() {
             <p className="hint">Click a cat in the room to see its stats.</p>
           )}
         </div>
-        <Inventory selectedPetId={selectedPetId} />
-        <BreedingPanel pets={Object.values(pets)} />
+        <Suitcase suitcasedPets={suitcasedPets} selectedPetId={selectedPetId} />
+        <BreedingPanel pets={roomPets} />
       </div>
     </div>
   )

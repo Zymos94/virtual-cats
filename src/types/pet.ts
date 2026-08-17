@@ -21,4 +21,8 @@ export interface Pet {
   actionStartedAt: number
   genetics: Genetics
   parentIds: [string, string] | null
+  // Cats "put away" in the suitcase don't render in the room and don't
+  // tick (no decay, no AI, no tail physics) — matches a real Petz carrier
+  // pausing a pet while it's stored.
+  inSuitcase: boolean
 }

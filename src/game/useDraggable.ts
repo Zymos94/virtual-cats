@@ -3,7 +3,10 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 interface DragHandlers {
   onDragStart?: () => void
   onDragMove: (x: number, y: number) => void
-  onDragEnd?: () => void
+  // Receives the raw pointer position (not grab-offset-adjusted) so callers
+  // can hit-test the drop point against an arbitrary drop target, e.g.
+  // `document.elementFromPoint(clientX, clientY)?.closest('.some-target')`.
+  onDragEnd?: (clientX: number, clientY: number) => void
   // Fires instead of a drag when the pointer barely moved before release —
   // lets the same element support both "click to select" and "drag to move".
   onClick?: () => void
@@ -32,10 +35,10 @@ export function useDraggable(getCurrentPosition: () => { x: number; y: number },
       handlers.onDragMove(ev.clientX - grabOffsetX, ev.clientY - grabOffsetY)
     }
 
-    function onUp() {
+    function onUp(ev: PointerEvent) {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      handlers.onDragEnd?.()
+      handlers.onDragEnd?.(ev.clientX, ev.clientY)
       if (!moved) handlers.onClick?.()
     }
 

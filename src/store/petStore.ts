@@ -26,6 +26,8 @@ interface PetStore {
   startDragPet: (petId: string) => void
   dragPetTo: (petId: string, x: number, y: number) => void
   endDragPet: (petId: string) => void
+  putPetInSuitcase: (petId: string) => void
+  takePetFromSuitcase: (petId: string, position: { x: number; y: number }) => void
   useItem: (petId: string, itemId: string) => void
   breedPets: (parentAId: string, parentBId: string) => void
   renamePet: (petId: string, name: string) => void
@@ -65,6 +67,7 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     facing: 'right',
     actionStartedAt: 0,
     parentIds: null,
+    inSuitcase: false,
     ...overrides,
   }
 }
@@ -114,7 +117,7 @@ function freshStarterPets(): Record<string, Pet> {
 // pets are reset to a clean idle state rather than resuming mid-animation
 // with a stale, session-relative timestamp.
 function sanitizeLoadedPet(pet: Pet): Pet {
-  return { ...pet, action: 'idle', destination: null, actionStartedAt: 0 }
+  return { ...pet, action: 'idle', destination: null, actionStartedAt: 0, inSuitcase: pet.inSuitcase ?? false }
 }
 
 function loadInitialPets(): Record<string, Pet> {
@@ -146,21 +149,26 @@ export const usePetStore = create<PetStore>((set) => ({
 
       while (accumulator >= DECAY_INTERVAL_MS) {
         const next: Record<string, Pet> = {}
-        for (const id in pets) next[id] = applyDecay(pets[id])
+        for (const id in pets) next[id] = pets[id].inSuitcase ? pets[id] : applyDecay(pets[id])
         pets = next
         accumulator -= DECAY_INTERVAL_MS
       }
 
       const moved: Record<string, Pet> = {}
       for (const id in pets) {
+        if (pets[id].inSuitcase) {
+          moved[id] = pets[id]
+          continue
+        }
         const decided = updatePetBehavior(pets[id], { now, sceneBounds: state.sceneBounds })
         moved[id] = movePet(decided, deltaMs)
       }
 
-      // Tail physics run every frame for every pet, regardless of whether
-      // that pet actually moved this tick — see tailPhysics.ts.
+      // Tail physics run every frame for every non-suitcased pet, regardless
+      // of whether that pet actually moved this tick — see tailPhysics.ts.
       const tailSegments: Record<string, Point[]> = {}
       for (const id in moved) {
+        if (moved[id].inSuitcase) continue
         const pet = moved[id]
         const previousPet = state.pets[id]
         const anchorLocal = getTailAnchorLocal(pet)
@@ -198,6 +206,28 @@ export const usePetStore = create<PetStore>((set) => ({
       if (!pet || pet.action !== 'held') return state
       return {
         pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } },
+      }
+    }),
+
+  putPetInSuitcase: (petId) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet) return state
+      return {
+        pets: { ...state.pets, [petId]: { ...pet, inSuitcase: true, action: 'idle', destination: null } },
+        selectedPetId: state.selectedPetId === petId ? null : state.selectedPetId,
+      }
+    }),
+
+  takePetFromSuitcase: (petId, position) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet) return state
+      return {
+        pets: {
+          ...state.pets,
+          [petId]: { ...pet, inSuitcase: false, position, action: 'idle', actionStartedAt: performance.now() },
+        },
       }
     }),
 
@@ -246,6 +276,7 @@ export const usePetStore = create<PetStore>((set) => ({
         actionStartedAt: performance.now(),
         genetics,
         parentIds: [parentA.id, parentB.id],
+        inSuitcase: false,
       }
 
       return {

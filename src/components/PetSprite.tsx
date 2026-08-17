@@ -65,7 +65,14 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const { onPointerDown } = useDraggable(() => pet.position, {
     onDragStart: () => usePetStore.getState().startDragPet(pet.id),
     onDragMove: (x, y) => usePetStore.getState().dragPetTo(pet.id, x, y),
-    onDragEnd: () => usePetStore.getState().endDragPet(pet.id),
+    onDragEnd: (clientX, clientY) => {
+      const droppedOnSuitcase = !!document.elementFromPoint(clientX, clientY)?.closest('.suitcase-panel')
+      if (droppedOnSuitcase) {
+        usePetStore.getState().putPetInSuitcase(pet.id)
+      } else {
+        usePetStore.getState().endDragPet(pet.id)
+      }
+    },
     onClick: () => usePetStore.getState().selectPet(pet.id),
   })
 
