@@ -1,8 +1,10 @@
 import type { Pet } from '../types/pet'
 import { useTailChain } from '../game/useTailChain'
+import { usePetStore } from '../store/petStore'
 
 interface PetSpriteProps {
   pet: Pet
+  selected: boolean
 }
 
 const SVG_WIDTH = 80
@@ -18,7 +20,7 @@ const TAIL_ANCHOR_LOCAL = { x: 14, y: 28 }
 
 const LEG_X_POSITIONS = [14, 24, 40, 50]
 
-export function PetSprite({ pet }: PetSpriteProps) {
+export function PetSprite({ pet, selected }: PetSpriteProps) {
   const anchorWorld = {
     x: pet.position.x + TAIL_ANCHOR_LOCAL.x,
     y: pet.position.y + TAIL_ANCHOR_LOCAL.y,
@@ -27,9 +29,15 @@ export function PetSprite({ pet }: PetSpriteProps) {
   const tailLocal = tailWorld.map((p) => ({ x: p.x - pet.position.x, y: p.y - pet.position.y }))
 
   const isIdleLike = pet.action !== 'walking'
+  const { body, stroke } = pet.color
 
   return (
-    <div className="pet-sprite" style={{ left: pet.position.x, top: pet.position.y }} title={pet.name}>
+    <div
+      className={selected ? 'pet-sprite selected' : 'pet-sprite'}
+      style={{ left: pet.position.x, top: pet.position.y }}
+      title={pet.name}
+      onClick={() => usePetStore.getState().selectPet(pet.id)}
+    >
       <svg
         width={SVG_WIDTH}
         height={SVG_HEIGHT}
@@ -41,27 +49,19 @@ export function PetSprite({ pet }: PetSpriteProps) {
           style={{ transformOrigin: `${TAIL_ANCHOR_LOCAL.x}px ${TAIL_ANCHOR_LOCAL.y}px` }}
         >
           {tailLocal.map((seg, i) => (
-            <circle
-              key={i}
-              cx={seg.x}
-              cy={seg.y}
-              r={4 - i * 0.4}
-              fill="#c97a3f"
-              stroke="#8a5327"
-              strokeWidth={1}
-            />
+            <circle key={i} cx={seg.x} cy={seg.y} r={4 - i * 0.4} fill={body} stroke={stroke} strokeWidth={1} />
           ))}
         </g>
 
         {LEG_X_POSITIONS.map((x, i) => (
-          <rect key={i} x={x} y={42} width={6} height={12} rx={2} fill="#c97a3f" stroke="#8a5327" strokeWidth={1} />
+          <rect key={i} x={x} y={42} width={6} height={12} rx={2} fill={body} stroke={stroke} strokeWidth={1} />
         ))}
 
-        <ellipse cx={32} cy={34} rx={20} ry={13} fill="#d98a4f" stroke="#8a5327" strokeWidth={2} />
+        <ellipse cx={32} cy={34} rx={20} ry={13} fill={body} stroke={stroke} strokeWidth={2} />
 
-        <polygon points="42,34 50,12 66,12 74,34" fill="#d98a4f" stroke="#8a5327" strokeWidth={2} />
-        <polygon points="47,14 53,2 58,15" fill="#d98a4f" stroke="#8a5327" strokeWidth={1.5} />
-        <polygon points="60,15 65,2 70,14" fill="#d98a4f" stroke="#8a5327" strokeWidth={1.5} />
+        <polygon points="42,34 50,12 66,12 74,34" fill={body} stroke={stroke} strokeWidth={2} />
+        <polygon points="47,14 53,2 58,15" fill={body} stroke={stroke} strokeWidth={1.5} />
+        <polygon points="60,15 65,2 70,14" fill={body} stroke={stroke} strokeWidth={1.5} />
 
         <circle cx={55} cy={23} r={1.8} fill="#1a1a1a" />
         <circle cx={63} cy={23} r={1.8} fill="#1a1a1a" />

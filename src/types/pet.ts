@@ -17,4 +17,7 @@ export interface Pet {
   action: ActionState
   facing: Facing
   actionStartedAt: number
+  // Fixed per-pet coloring for now. Replaced by genetics-derived phenotype
+  // colors in M5, once breeding exists.
+  color: { body: string; stroke: string }
 }

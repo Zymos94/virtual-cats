@@ -8,6 +8,8 @@ interface TickContext {
 
 const SLEEP_DURATION_MS = 6000
 const IDLE_PAUSE_MS = 2000
+const EATING_DURATION_MS = 2500
+const PLAYING_DURATION_MS = 3000
 
 // Decides what a pet should be doing next. Pure function: Pet -> Pet, no
 // side effects. Movement itself happens separately in movement.ts, driven
@@ -39,7 +41,21 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
     }
     case 'sleeping': {
       if (ctx.now - pet.actionStartedAt > SLEEP_DURATION_MS || pet.needs.energy >= 90) {
-        return { ...pet, action: 'idle' }
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
+      }
+      return pet
+    }
+    // 'eating' and 'playing' are triggered by using an inventory item
+    // (see petStore.useItem) — here we just time them back out to idle.
+    case 'eating': {
+      if (ctx.now - pet.actionStartedAt > EATING_DURATION_MS) {
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
+      }
+      return pet
+    }
+    case 'playing': {
+      if (ctx.now - pet.actionStartedAt > PLAYING_DURATION_MS) {
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
       }
       return pet
     }

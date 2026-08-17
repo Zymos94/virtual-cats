@@ -19,7 +19,11 @@
 
 .pet-sprite {
   position: absolute;
-  pointer-events: none;
+  cursor: pointer;
+}
+
+.pet-sprite.selected svg {
+  filter: drop-shadow(0 0 4px #ffd54f) drop-shadow(0 0 4px #ffd54f);
 }
 
 @keyframes tail-sway {
@@ -69,23 +73,53 @@
   transition: width 0.3s ease;
 }
 
-.actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
+.hint {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
 }
 
-.actions button {
-  flex: 1;
-  padding: 8px 0;
-  font-size: 15px;
-  border-radius: 6px;
+.inventory {
+  text-align: left;
+  margin-top: 20px;
+}
+
+.inventory h3 {
+  font-size: 16px;
+  margin: 0 0 10px;
+  color: var(--text-h);
+}
+
+.item-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.item-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+  padding: 10px 4px;
+  font-size: 13px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--code-bg);
   color: var(--text-h);
   cursor: pointer;
 }
 
-.actions button:hover {
+.item-button:hover:not(:disabled) {
   border-color: var(--accent-border);
+}
+
+.item-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.item-icon {
+  font-size: 22px;
 }
