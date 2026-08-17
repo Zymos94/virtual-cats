@@ -2,10 +2,12 @@ import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type { ActionState, Needs, Pet } from '../types/pet'
 import type { Genetics } from '../types/genetics'
+import type { PlacedItem } from '../types/item'
 import { updatePetBehavior } from '../game/behaviorFSM'
 import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
+import { ITEM_PERCEPTION_RADIUS, wantsItem } from '../game/itemWants'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
 import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
@@ -13,6 +15,7 @@ import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConsta
 
 interface PetStore {
   pets: Record<string, Pet>
+  sceneItems: Record<string, PlacedItem>
   // Tail chain positions in scene coordinates, one array per pet — kept
   // here (not component state) so they keep relaxing every real frame even
   // for pets that aren't currently moving. See tailPhysics.ts for why.
@@ -28,7 +31,7 @@ interface PetStore {
   endDragPet: (petId: string) => void
   putPetInSuitcase: (petId: string) => void
   takePetFromSuitcase: (petId: string, position: { x: number; y: number }) => void
-  useItem: (petId: string, itemId: string) => void
+  placeItem: (itemTypeId: string, position: { x: number; y: number }) => void
   breedPets: (parentAId: string, parentBId: string) => void
   renamePet: (petId: string, name: string) => void
   resetGame: () => void
@@ -39,6 +42,14 @@ const DECAY_PER_SECOND: Needs = { hunger: -0.5, energy: -0.3, hygiene: -0.2, hap
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, value))
+}
+
+function releaseClaim(
+  sceneItems: Record<string, PlacedItem>,
+  itemId: string | null,
+): Record<string, PlacedItem> {
+  if (!itemId || !sceneItems[itemId]) return sceneItems
+  return { ...sceneItems, [itemId]: { ...sceneItems[itemId], claimedBy: null } }
 }
 
 function applyDecay(pet: Pet): Pet {
@@ -68,6 +79,7 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     actionStartedAt: 0,
     parentIds: null,
     inSuitcase: false,
+    targetItemId: null,
     ...overrides,
   }
 }
@@ -117,20 +129,34 @@ function freshStarterPets(): Record<string, Pet> {
 // pets are reset to a clean idle state rather than resuming mid-animation
 // with a stale, session-relative timestamp.
 function sanitizeLoadedPet(pet: Pet): Pet {
-  return { ...pet, action: 'idle', destination: null, actionStartedAt: 0, inSuitcase: pet.inSuitcase ?? false }
+  return {
+    ...pet,
+    action: 'idle',
+    destination: null,
+    actionStartedAt: 0,
+    inSuitcase: pet.inSuitcase ?? false,
+    targetItemId: null,
+  }
 }
 
-function loadInitialPets(): Record<string, Pet> {
+function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<string, PlacedItem> } {
   const saved = loadFromLocalStorage()
-  if (!saved || Object.keys(saved).length === 0) return freshStarterPets()
+  if (!saved || Object.keys(saved.pets).length === 0) return { pets: freshStarterPets(), sceneItems: {} }
 
-  const sanitized: Record<string, Pet> = {}
-  for (const id in saved) sanitized[id] = sanitizeLoadedPet(saved[id])
-  return sanitized
+  const pets: Record<string, Pet> = {}
+  for (const id in saved.pets) pets[id] = sanitizeLoadedPet(saved.pets[id])
+
+  const sceneItems: Record<string, PlacedItem> = {}
+  for (const id in saved.sceneItems ?? {}) sceneItems[id] = { ...saved.sceneItems[id], claimedBy: null }
+
+  return { pets, sceneItems }
 }
+
+const initialState = loadInitialState()
 
 export const usePetStore = create<PetStore>((set) => ({
-  pets: loadInitialPets(),
+  pets: initialState.pets,
+  sceneItems: initialState.sceneItems,
   tailSegments: {},
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
@@ -154,14 +180,68 @@ export const usePetStore = create<PetStore>((set) => ({
         accumulator -= DECAY_INTERVAL_MS
       }
 
+      // Working copy of items, mutated as pets claim/consume them this
+      // tick. Processing pets in order (not in parallel) means two pets
+      // can't both claim the same item in the same frame.
+      const sceneItems: Record<string, PlacedItem> = { ...state.sceneItems }
+      const claimed = new Set<string>()
+      for (const itemId in sceneItems) {
+        if (sceneItems[itemId].claimedBy) claimed.add(itemId)
+      }
+
       const moved: Record<string, Pet> = {}
       for (const id in pets) {
-        if (pets[id].inSuitcase) {
-          moved[id] = pets[id]
+        const pet = pets[id]
+        if (pet.inSuitcase) {
+          moved[id] = pet
           continue
         }
-        const decided = updatePetBehavior(pets[id], { now, sceneBounds: state.sceneBounds })
-        moved[id] = movePet(decided, deltaMs)
+
+        const nearbyWantedItems = Object.values(sceneItems)
+          .filter((item) => !claimed.has(item.id))
+          .filter((item) => {
+            const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
+            if (!definition || !wantsItem(pet, definition)) return false
+            return Math.hypot(item.position.x - pet.position.x, item.position.y - pet.position.y) < ITEM_PERCEPTION_RADIUS
+          })
+          .sort(
+            (a, b) =>
+              Math.hypot(a.position.x - pet.position.x, a.position.y - pet.position.y) -
+              Math.hypot(b.position.x - pet.position.x, b.position.y - pet.position.y),
+          )
+
+        const decided = updatePetBehavior(pet, { now, sceneBounds: state.sceneBounds, nearbyWantedItems })
+
+        if (decided.targetItemId && decided.targetItemId !== pet.targetItemId) {
+          claimed.add(decided.targetItemId)
+          const claimedItem = sceneItems[decided.targetItemId]
+          if (claimedItem) sceneItems[decided.targetItemId] = { ...claimedItem, claimedBy: id }
+        }
+
+        let finalPet = movePet(decided, deltaMs)
+
+        // Arrived at a targeted item this tick — consume it: apply its
+        // effect, switch to an eating/playing animation, and remove it
+        // from the room.
+        if (pet.action === 'walking' && finalPet.action === 'idle' && finalPet.targetItemId) {
+          const placedItem = sceneItems[finalPet.targetItemId]
+          const definition = placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
+          if (placedItem && definition) {
+            let needs = finalPet.needs
+            for (const key in definition.effect) {
+              const need = key as keyof Needs
+              const amount = definition.effect[need] ?? 0
+              needs = { ...needs, [need]: clamp(needs[need] + amount) }
+            }
+            const action: ActionState = definition.category === 'food' ? 'eating' : 'playing'
+            finalPet = { ...finalPet, needs, action, targetItemId: null, actionStartedAt: now }
+            delete sceneItems[placedItem.id]
+          } else {
+            finalPet = { ...finalPet, targetItemId: null }
+          }
+        }
+
+        moved[id] = finalPet
       }
 
       // Tail physics run every frame for every non-suitcased pet, regardless
@@ -181,7 +261,7 @@ export const usePetStore = create<PetStore>((set) => ({
         tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
       }
 
-      return { pets: moved, decayAccumulatorMs: accumulator, tailSegments }
+      return { pets: moved, sceneItems, decayAccumulatorMs: accumulator, tailSegments }
     }),
 
   selectPet: (petId) => set({ selectedPetId: petId }),
@@ -190,7 +270,10 @@ export const usePetStore = create<PetStore>((set) => ({
     set((state) => {
       const pet = state.pets[petId]
       if (!pet) return state
-      return { pets: { ...state.pets, [petId]: { ...pet, action: 'held', destination: null } } }
+      return {
+        pets: { ...state.pets, [petId]: { ...pet, action: 'held', destination: null, targetItemId: null } },
+        sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
+      }
     }),
 
   dragPetTo: (petId, x, y) =>
@@ -214,7 +297,11 @@ export const usePetStore = create<PetStore>((set) => ({
       const pet = state.pets[petId]
       if (!pet) return state
       return {
-        pets: { ...state.pets, [petId]: { ...pet, inSuitcase: true, action: 'idle', destination: null } },
+        pets: {
+          ...state.pets,
+          [petId]: { ...pet, inSuitcase: true, action: 'idle', destination: null, targetItemId: null },
+        },
+        sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
         selectedPetId: state.selectedPetId === petId ? null : state.selectedPetId,
       }
     }),
@@ -231,27 +318,11 @@ export const usePetStore = create<PetStore>((set) => ({
       }
     }),
 
-  useItem: (petId, itemId) =>
+  placeItem: (itemTypeId, position) =>
     set((state) => {
-      const item = ITEM_DEFINITIONS.find((definition) => definition.id === itemId)
-      const pet = state.pets[petId]
-      if (!item || !pet) return state
-
-      let needs = pet.needs
-      for (const key in item.effect) {
-        const need = key as keyof Needs
-        const amount = item.effect[need] ?? 0
-        needs = { ...needs, [need]: clamp(needs[need] + amount) }
-      }
-
-      const action: ActionState = item.category === 'food' ? 'eating' : 'playing'
-
-      return {
-        pets: {
-          ...state.pets,
-          [petId]: { ...pet, needs, action, actionStartedAt: performance.now() },
-        },
-      }
+      const id = nanoid()
+      const placedItem: PlacedItem = { id, itemTypeId, position, claimedBy: null }
+      return { sceneItems: { ...state.sceneItems, [id]: placedItem } }
     }),
 
   breedPets: (parentAId, parentBId) =>
@@ -277,6 +348,7 @@ export const usePetStore = create<PetStore>((set) => ({
         genetics,
         parentIds: [parentA.id, parentB.id],
         inSuitcase: false,
+        targetItemId: null,
       }
 
       return {
@@ -294,7 +366,7 @@ export const usePetStore = create<PetStore>((set) => ({
 
   resetGame: () => {
     clearSavedGame()
-    set({ pets: freshStarterPets(), tailSegments: {}, selectedPetId: null })
+    set({ pets: freshStarterPets(), sceneItems: {}, tailSegments: {}, selectedPetId: null })
   },
 }))
 
@@ -306,5 +378,5 @@ usePetStore.subscribe((state) => {
   const now = Date.now()
   if (now - lastSaveAt < 2000) return
   lastSaveAt = now
-  saveToLocalStorage(state.pets)
+  saveToLocalStorage(state.pets, state.sceneItems)
 })

@@ -1,17 +1,16 @@
 import { useState } from 'react'
 import type { Pet } from '../types/pet'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
-import { usePetStore } from '../store/petStore'
 import { CatAvatar } from './CatAvatar'
+import { ItemAvatar } from './ItemAvatar'
 
 interface SuitcaseProps {
   suitcasedPets: Pet[]
-  selectedPetId: string | null
 }
 
 type Tab = 'cats' | 'items'
 
-export function Suitcase({ suitcasedPets, selectedPetId }: SuitcaseProps) {
+export function Suitcase({ suitcasedPets }: SuitcaseProps) {
   const [tab, setTab] = useState<Tab>('cats')
 
   return (
@@ -37,19 +36,10 @@ export function Suitcase({ suitcasedPets, selectedPetId }: SuitcaseProps) {
         )
       ) : (
         <>
-          <p className="hint">{selectedPetId ? 'Use an item on the selected cat' : 'Select a cat first'}</p>
+          <p className="hint">Drag an item into the room — a cat that wants it will come use it.</p>
           <div className="item-grid">
             {ITEM_DEFINITIONS.map((item) => (
-              <button
-                key={item.id}
-                className="item-button"
-                disabled={!selectedPetId}
-                onClick={() => selectedPetId && usePetStore.getState().useItem(selectedPetId, item.id)}
-                title={item.name}
-              >
-                <span className="item-icon">{item.icon}</span>
-                <span className="item-name">{item.name}</span>
-              </button>
+              <ItemAvatar key={item.id} item={item} />
             ))}
           </div>
         </>

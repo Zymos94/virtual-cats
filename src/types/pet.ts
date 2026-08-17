@@ -25,4 +25,7 @@ export interface Pet {
   // tick (no decay, no AI, no tail physics) — matches a real Petz carrier
   // pausing a pet while it's stored.
   inSuitcase: boolean
+  // Set while walking toward a dropped item it wants to use — cleared on
+  // arrival (consumption) or on interruption (picked up, put away).
+  targetItemId: string | null
 }

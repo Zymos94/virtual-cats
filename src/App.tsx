@@ -13,6 +13,7 @@ function App() {
   useSceneBounds()
 
   const pets = usePetStore((state) => state.pets)
+  const sceneItems = usePetStore((state) => state.sceneItems)
   const selectedPetId = usePetStore((state) => state.selectedPetId)
   const selectedPet = selectedPetId ? pets[selectedPetId] : null
 
@@ -21,7 +22,7 @@ function App() {
 
   return (
     <div className="app">
-      <Scene pets={roomPets} selectedPetId={selectedPetId} />
+      <Scene pets={roomPets} placedItems={Object.values(sceneItems)} selectedPetId={selectedPetId} />
 
       <div className="top-bar">
         <h1>Virtual Cats</h1>
@@ -48,7 +49,7 @@ function App() {
             <p className="hint">Click a cat in the room to see its stats.</p>
           )}
         </div>
-        <Suitcase suitcasedPets={suitcasedPets} selectedPetId={selectedPetId} />
+        <Suitcase suitcasedPets={suitcasedPets} />
         <BreedingPanel pets={roomPets} />
       </div>
     </div>

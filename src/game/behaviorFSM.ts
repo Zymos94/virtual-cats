@@ -1,9 +1,14 @@
 import type { Pet } from '../types/pet'
+import type { PlacedItem } from '../types/item'
 import { randomPointInBounds } from './movement'
 
 interface TickContext {
   now: number
   sceneBounds: { width: number; height: number }
+  // Unclaimed items this pet currently wants, nearest first — already
+  // filtered/sorted by petStore.tick() since that's where the full picture
+  // of all pets and items lives. This function just picks the nearest one.
+  nearbyWantedItems: PlacedItem[]
 }
 
 const SLEEP_DURATION_MS = 6000
@@ -30,11 +35,24 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       if (ctx.now - pet.actionStartedAt < IDLE_PAUSE_MS) {
         return pet
       }
+
+      const wanted = ctx.nearbyWantedItems[0]
+      if (wanted) {
+        return {
+          ...pet,
+          action: 'walking',
+          destination: wanted.position,
+          targetItemId: wanted.id,
+          actionStartedAt: ctx.now,
+        }
+      }
+
       const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
       return {
         ...pet,
         action: 'walking',
         destination: randomPointInBounds(ctx.sceneBounds, 60, topMargin),
+        targetItemId: null,
         actionStartedAt: ctx.now,
       }
     }
@@ -50,8 +68,9 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
       return pet
     }
-    // 'eating' and 'playing' are triggered by using an inventory item
-    // (see petStore.useItem) — here we just time them back out to idle.
+    // 'eating' and 'playing' are triggered when a pet arrives at its
+    // targetItemId (see petStore.tick's arrival/consumption step) — here we
+    // just time them back out to idle.
     case 'eating': {
       if (ctx.now - pet.actionStartedAt > EATING_DURATION_MS) {
         return { ...pet, action: 'idle', actionStartedAt: ctx.now }
