@@ -75,6 +75,20 @@
   animation: tail-sway 2.6s ease-in-out infinite;
 }
 
+@keyframes tail-flick {
+  0%,
+  100% {
+    transform: rotate(-16deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+.tail-flick {
+  animation: tail-flick 0.45s ease-in-out infinite;
+}
+
 .bottom-dock {
   position: absolute;
   bottom: 0;

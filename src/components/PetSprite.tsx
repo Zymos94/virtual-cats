@@ -35,21 +35,42 @@ const SPOT_POSITIONS = [
 
 const ATTENTION_RADIUS = 260
 const MAX_HEAD_TILT_DEG = 14
+const TAIL_RAISE_PX = 6
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+// A simple first pass at mood-driven tail carriage, using only the stats
+// we have today (needs + current action). 'agitated' -> a sharp flick;
+// 'content' -> tail carried up; 'neutral' -> the calm resting sway/trail.
+// A real attention/mood system (M14+) can replace this with richer inputs
+// without changing how PetSprite consumes the result.
+type TailMood = 'content' | 'neutral' | 'agitated'
+
+function getTailMood(pet: Pet): TailMood {
+  if (pet.action === 'playing') return 'agitated'
+  if (pet.needs.hunger < 30 || pet.needs.happiness < 30) return 'agitated'
+  if (pet.needs.happiness > 70 && pet.action !== 'walking') return 'content'
+  return 'neutral'
+}
+
 export function PetSprite({ pet, selected }: PetSpriteProps) {
-  const anchorWorld = {
-    x: pet.position.x + TAIL_ANCHOR_LOCAL.x,
-    y: pet.position.y + TAIL_ANCHOR_LOCAL.y,
+  const tailMood = getTailMood(pet)
+  const tailAnchorLocal = {
+    x: TAIL_ANCHOR_LOCAL.x,
+    y: tailMood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y,
   }
-  const tailWorld = useTailChain(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
+  const anchorWorld = {
+    x: pet.position.x + tailAnchorLocal.x,
+    y: pet.position.y + tailAnchorLocal.y,
+  }
+  const tailWorld = useTailChain(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH, pet.facing, pet.position.x, SVG_WIDTH)
   const tailLocal = tailWorld.map((p) => ({ x: p.x - pet.position.x, y: p.y - pet.position.y }))
 
   const isWalking = pet.action === 'walking'
   const isIdleLike = !isWalking
+  const tailClassName = tailMood === 'agitated' ? 'tail-flick' : isIdleLike ? 'tail-idle-sway' : undefined
   const { body, stroke, eye, scale, spotted } = deriveAppearance(pet.genetics)
   const xScale = pet.facing === 'left' ? -scale : scale
 
@@ -84,8 +105,8 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         style={{ transform: `scale(${xScale}, ${scale})`, transformOrigin: '50% 50%', overflow: 'visible' }}
       >
         <g
-          className={isIdleLike ? 'tail-idle-sway' : undefined}
-          style={{ transformOrigin: `${TAIL_ANCHOR_LOCAL.x}px ${TAIL_ANCHOR_LOCAL.y}px` }}
+          className={tailClassName}
+          style={{ transformOrigin: `${tailAnchorLocal.x}px ${tailAnchorLocal.y}px` }}
         >
           {tailLocal.map((seg, i) => (
             <circle key={i} cx={seg.x} cy={seg.y} r={4 - i * 0.4} fill={body} stroke={stroke} strokeWidth={1} />
