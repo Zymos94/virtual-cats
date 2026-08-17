@@ -1,21 +1,26 @@
 .app {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 24px;
-  text-align: center;
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.header-row {
+.top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 16px;
-  position: relative;
+  padding: 10px 24px;
 }
 
-.save-controls {
-  position: absolute;
-  right: 0;
+.top-bar h1 {
+  font-size: 26px;
+  margin: 0;
 }
 
 .save-controls button {
@@ -23,7 +28,7 @@
   font-size: 13px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--code-bg);
+  background: var(--bg);
   color: var(--text-h);
   cursor: pointer;
 }
@@ -33,15 +38,18 @@
 }
 
 .scene {
-  position: relative;
-  width: 600px;
-  height: 320px;
-  max-width: 100%;
-  margin: 0 auto 24px;
-  background: #cfe8c9;
-  border: 2px solid #8fae86;
-  border-radius: 8px;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    #e8ddc7 0%,
+    #e8ddc7 calc(18% - 3px),
+    #8a5327 calc(18% - 3px),
+    #8a5327 18%,
+    #cfe8c9 18%,
+    #cfe8c9 100%
+  );
 }
 
 .pet-sprite {
@@ -67,6 +75,21 @@
   animation: tail-sway 2.6s ease-in-out infinite;
 }
 
+.bottom-dock {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 24px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
 .stats-panel,
 .inventory,
 .breeding-panel {
@@ -75,7 +98,9 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px 20px;
-  margin-top: 16px;
+  flex: 1 1 260px;
+  min-width: 240px;
+  box-shadow: var(--shadow);
 }
 
 .pet-name-input {

@@ -2,13 +2,17 @@ import type { Pet } from '../types/pet'
 
 const SPEED_PX_PER_SEC = 40
 
+// topMargin lets callers keep wandering cats off the "wall" band at the top
+// of the room, without also pushing the bottom margin in — defaults to the
+// same value as margin when not given.
 export function randomPointInBounds(
   bounds: { width: number; height: number },
   margin = 60,
+  topMargin = margin,
 ): { x: number; y: number } {
   return {
     x: margin + Math.random() * Math.max(1, bounds.width - margin * 2),
-    y: margin + Math.random() * Math.max(1, bounds.height - margin * 2),
+    y: topMargin + Math.random() * Math.max(1, bounds.height - topMargin - margin),
   }
 }
 

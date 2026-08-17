@@ -14,6 +14,7 @@ interface PetStore {
   decayAccumulatorMs: number
   selectedPetId: string | null
   tick: (now: number, deltaMs: number) => void
+  setSceneBounds: (bounds: { width: number; height: number }) => void
   selectPet: (petId: string | null) => void
   useItem: (petId: string, itemId: string) => void
   breedPets: (parentAId: string, parentBId: string) => void
@@ -117,9 +118,11 @@ function loadInitialPets(): Record<string, Pet> {
 
 export const usePetStore = create<PetStore>((set) => ({
   pets: loadInitialPets(),
-  sceneBounds: { width: 600, height: 320 },
+  sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
   selectedPetId: null,
+
+  setSceneBounds: (bounds) => set({ sceneBounds: bounds }),
 
   // Called every animation frame by the game loop. Needs decay happens in
   // fixed 1-second steps so its rate stays consistent regardless of frame

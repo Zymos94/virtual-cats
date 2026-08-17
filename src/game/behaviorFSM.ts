@@ -11,6 +11,10 @@ const IDLE_PAUSE_MS = 2000
 const EATING_DURATION_MS = 2500
 const PLAYING_DURATION_MS = 3000
 
+// Matches the wall-band height in App.css's room background — keeps
+// wandering destinations on the floor instead of "inside" the wall.
+const WALL_BAND_FRACTION = 0.18
+
 // Decides what a pet should be doing next. Pure function: Pet -> Pet, no
 // side effects. Movement itself happens separately in movement.ts, driven
 // by whatever this function decides `action`/`destination` should be.
@@ -26,10 +30,11 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       if (ctx.now - pet.actionStartedAt < IDLE_PAUSE_MS) {
         return pet
       }
+      const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
       return {
         ...pet,
         action: 'walking',
-        destination: randomPointInBounds(ctx.sceneBounds),
+        destination: randomPointInBounds(ctx.sceneBounds, 60, topMargin),
         actionStartedAt: ctx.now,
       }
     }
