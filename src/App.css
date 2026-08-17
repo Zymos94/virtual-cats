@@ -315,6 +315,12 @@
   box-shadow: var(--shadow);
 }
 
+.item-sprite-draggable {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
 .breeding-panel h3 {
   font-size: 16px;
   margin: 0 0 10px;

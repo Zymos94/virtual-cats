@@ -8,6 +8,7 @@ import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
 import { ITEM_PERCEPTION_RADIUS, wantsItem } from '../game/itemWants'
+import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
 import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
@@ -32,6 +33,9 @@ interface PetStore {
   putPetInSuitcase: (petId: string) => void
   takePetFromSuitcase: (petId: string, position: { x: number; y: number }) => void
   placeItem: (itemTypeId: string, position: { x: number; y: number }) => void
+  startDragItem: (itemId: string) => void
+  dragItemTo: (itemId: string, x: number, y: number) => void
+  endDragItem: (itemId: string, velocity: { x: number; y: number }) => void
   breedPets: (parentAId: string, parentBId: string) => void
   renamePet: (petId: string, name: string) => void
   resetGame: () => void
@@ -147,7 +151,9 @@ function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<str
   for (const id in saved.pets) pets[id] = sanitizeLoadedPet(saved.pets[id])
 
   const sceneItems: Record<string, PlacedItem> = {}
-  for (const id in saved.sceneItems ?? {}) sceneItems[id] = { ...saved.sceneItems[id], claimedBy: null }
+  for (const id in saved.sceneItems ?? {}) {
+    sceneItems[id] = { ...saved.sceneItems[id], claimedBy: null, held: false, velocity: { x: 0, y: 0 } }
+  }
 
   return { pets, sceneItems }
 }
@@ -183,7 +189,12 @@ export const usePetStore = create<PetStore>((set) => ({
       // Working copy of items, mutated as pets claim/consume them this
       // tick. Processing pets in order (not in parallel) means two pets
       // can't both claim the same item in the same frame.
-      const sceneItems: Record<string, PlacedItem> = { ...state.sceneItems }
+      const sceneItems: Record<string, PlacedItem> = {}
+      for (const itemId in state.sceneItems) {
+        const item = state.sceneItems[itemId]
+        const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
+        sceneItems[itemId] = definition?.physics ? stepItemPhysics(item, deltaMs, state.sceneBounds) : item
+      }
       const claimed = new Set<string>()
       for (const itemId in sceneItems) {
         if (sceneItems[itemId].claimedBy) claimed.add(itemId)
@@ -210,12 +221,20 @@ export const usePetStore = create<PetStore>((set) => ({
               Math.hypot(b.position.x - pet.position.x, b.position.y - pet.position.y),
           )
 
-        const decided = updatePetBehavior(pet, { now, sceneBounds: state.sceneBounds, nearbyWantedItems })
+        let decided = updatePetBehavior(pet, { now, sceneBounds: state.sceneBounds, nearbyWantedItems })
 
         if (decided.targetItemId && decided.targetItemId !== pet.targetItemId) {
           claimed.add(decided.targetItemId)
           const claimedItem = sceneItems[decided.targetItemId]
           if (claimedItem) sceneItems[decided.targetItemId] = { ...claimedItem, claimedBy: id }
+        }
+
+        // Keep chasing a moving target (e.g. a rolling ball) by re-aiming
+        // at its current position every frame, rather than the stale spot
+        // it was at the moment it got claimed.
+        if (decided.action === 'walking' && decided.targetItemId) {
+          const target = sceneItems[decided.targetItemId]
+          if (target) decided = { ...decided, destination: target.position }
         }
 
         let finalPet = movePet(decided, deltaMs)
@@ -321,8 +340,32 @@ export const usePetStore = create<PetStore>((set) => ({
   placeItem: (itemTypeId, position) =>
     set((state) => {
       const id = nanoid()
-      const placedItem: PlacedItem = { id, itemTypeId, position, claimedBy: null }
+      const placedItem: PlacedItem = { id, itemTypeId, position, claimedBy: null, velocity: { x: 0, y: 0 }, held: false }
       return { sceneItems: { ...state.sceneItems, [id]: placedItem } }
+    }),
+
+  startDragItem: (itemId) =>
+    set((state) => {
+      const item = state.sceneItems[itemId]
+      if (!item) return state
+      return {
+        sceneItems: { ...state.sceneItems, [itemId]: { ...item, held: true, velocity: { x: 0, y: 0 }, claimedBy: null } },
+      }
+    }),
+
+  dragItemTo: (itemId, x, y) =>
+    set((state) => {
+      const item = state.sceneItems[itemId]
+      if (!item) return state
+      const position = clampToRoom({ x, y }, state.sceneBounds)
+      return { sceneItems: { ...state.sceneItems, [itemId]: { ...item, position } } }
+    }),
+
+  endDragItem: (itemId, velocity) =>
+    set((state) => {
+      const item = state.sceneItems[itemId]
+      if (!item) return state
+      return { sceneItems: { ...state.sceneItems, [itemId]: { ...item, held: false, velocity } } }
     }),
 
   breedPets: (parentAId, parentBId) =>
