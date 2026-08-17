@@ -1,5 +1,6 @@
 import type { Pet } from '../types/pet'
 import { useTailChain } from '../game/useTailChain'
+import { useDraggable } from '../game/useDraggable'
 import { usePetStore } from '../store/petStore'
 import { deriveAppearance } from '../game/appearance'
 import { mousePosition } from '../game/mousePosition'
@@ -91,12 +92,26 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     headTiltDeg = pet.facing === 'left' ? -rawTilt : rawTilt
   }
 
+  const isHeld = pet.action === 'held'
+  const { onPointerDown } = useDraggable(() => pet.position, {
+    onDragStart: () => usePetStore.getState().startDragPet(pet.id),
+    onDragMove: (x, y) => usePetStore.getState().dragPetTo(pet.id, x, y),
+    onDragEnd: () => usePetStore.getState().endDragPet(pet.id),
+    onClick: () => usePetStore.getState().selectPet(pet.id),
+  })
+
   return (
     <div
-      className={selected ? 'pet-sprite selected' : 'pet-sprite'}
+      className={[
+        'pet-sprite',
+        selected && 'selected',
+        isHeld && 'dragging',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={{ left: pet.position.x, top: pet.position.y }}
       title={pet.name}
-      onClick={() => usePetStore.getState().selectPet(pet.id)}
+      onPointerDown={onPointerDown}
     >
       <svg
         width={SVG_WIDTH}

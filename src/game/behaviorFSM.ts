@@ -64,6 +64,10 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
       return pet
     }
+    // Player is actively dragging this pet — AI is fully suspended, and
+    // petStore.endDragPet() is what transitions it back out of 'held'.
+    case 'held':
+      return pet
     default:
       return pet
   }

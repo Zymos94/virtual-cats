@@ -16,6 +16,9 @@ interface PetStore {
   tick: (now: number, deltaMs: number) => void
   setSceneBounds: (bounds: { width: number; height: number }) => void
   selectPet: (petId: string | null) => void
+  startDragPet: (petId: string) => void
+  dragPetTo: (petId: string, x: number, y: number) => void
+  endDragPet: (petId: string) => void
   useItem: (petId: string, itemId: string) => void
   breedPets: (parentAId: string, parentBId: string) => void
   renamePet: (petId: string, name: string) => void
@@ -150,6 +153,29 @@ export const usePetStore = create<PetStore>((set) => ({
     }),
 
   selectPet: (petId) => set({ selectedPetId: petId }),
+
+  startDragPet: (petId) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet) return state
+      return { pets: { ...state.pets, [petId]: { ...pet, action: 'held', destination: null } } }
+    }),
+
+  dragPetTo: (petId, x, y) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet) return state
+      return { pets: { ...state.pets, [petId]: { ...pet, position: { x, y } } } }
+    }),
+
+  endDragPet: (petId) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet || pet.action !== 'held') return state
+      return {
+        pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } },
+      }
+    }),
 
   useItem: (petId, itemId) =>
     set((state) => {

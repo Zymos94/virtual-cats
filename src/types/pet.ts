@@ -1,6 +1,6 @@
 import type { Genetics } from './genetics'
 
-export type ActionState = 'idle' | 'walking' | 'eating' | 'sleeping' | 'playing'
+export type ActionState = 'idle' | 'walking' | 'eating' | 'sleeping' | 'playing' | 'held'
 export type Facing = 'left' | 'right'
 
 export interface Needs {
