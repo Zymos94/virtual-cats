@@ -6,6 +6,7 @@ import { StatBar } from './components/StatBar'
 import { Suitcase } from './components/Suitcase'
 import { BreedingPanel } from './components/BreedingPanel'
 import { SaveLoadControls } from './components/SaveLoadControls'
+import { getPersonalityLabel } from './game/personality'
 import './App.css'
 
 function App() {
@@ -44,6 +45,9 @@ function App() {
               <StatBar label="Energy" value={selectedPet.needs.energy} color="#3f8ee0" />
               <StatBar label="Hygiene" value={selectedPet.needs.hygiene} color="#3fe0a0" />
               <StatBar label="Happiness" value={selectedPet.needs.happiness} color="#e0d63f" />
+              <p className="hint personality-hint">
+                {getPersonalityLabel(selectedPet.affection)} — hold to pet
+              </p>
             </>
           ) : (
             <p className="hint">Click a cat in the room to see its stats.</p>

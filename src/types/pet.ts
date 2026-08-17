@@ -1,6 +1,6 @@
 import type { Genetics } from './genetics'
 
-export type ActionState = 'idle' | 'walking' | 'eating' | 'sleeping' | 'playing' | 'held'
+export type ActionState = 'idle' | 'walking' | 'eating' | 'sleeping' | 'playing' | 'held' | 'petting'
 export type Facing = 'left' | 'right'
 
 export interface Needs {
@@ -39,4 +39,9 @@ export interface Pet {
   // doesn't get beelined-at by two others at once. Also makes the claimed
   // cat wait in place rather than wander off mid-approach.
   socialClaimedBy: string | null
+  // A fixed personality trait (0-100) — how much this cat enjoys being
+  // petted by hand. Higher means faster happiness gain per second while
+  // held in the 'petting' action. Like attentionSpan, not part of the
+  // formal genetics system, just a per-cat trait kittens roughly inherit.
+  affection: number
 }

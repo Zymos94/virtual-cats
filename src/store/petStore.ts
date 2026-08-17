@@ -28,6 +28,8 @@ interface PetStore {
   setSceneBounds: (bounds: { width: number; height: number }) => void
   selectPet: (petId: string | null) => void
   startDragPet: (petId: string) => void
+  startPetting: (petId: string) => void
+  endPetting: (petId: string) => void
   dragPetTo: (petId: string, x: number, y: number) => void
   endDragPet: (petId: string) => void
   putPetInSuitcase: (petId: string) => void
@@ -48,6 +50,11 @@ const PLACE_DROP_HEIGHT = 24
 const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
 const MAX_LIFT = 600 // px/s cap, so a very fast swipe doesn't launch it absurdly high
 const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is free, shouldn't outshine toys
+// Happiness gained per second while being petted, scaled by the cat's own
+// affection trait — a very affectionate cat (affection 100) gains roughly
+// 5x faster than an aloof one (affection 0).
+const PETTING_BASE_RATE = 2
+const PETTING_AFFECTION_BONUS = 8
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, value))
@@ -115,6 +122,7 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     attentionSpan: 300,
     targetPetId: null,
     socialClaimedBy: null,
+    affection: 60,
     ...overrides,
   }
 }
@@ -125,6 +133,7 @@ const starterPets: Pet[] = [
     name: 'Whiskers',
     position: { x: 120, y: 90 },
     attentionSpan: 320,
+    affection: 65,
     genetics: {
       furColor: homozygous('orange'),
       pattern: homozygous('solid'),
@@ -137,6 +146,7 @@ const starterPets: Pet[] = [
     name: 'Mittens',
     position: { x: 320, y: 140 },
     attentionSpan: 260,
+    affection: 40,
     genetics: {
       furColor: homozygous('gray'),
       pattern: homozygous('spotted'),
@@ -149,6 +159,7 @@ const starterPets: Pet[] = [
     name: 'Tom',
     position: { x: 460, y: 60 },
     attentionSpan: 380,
+    affection: 80,
     genetics: {
       furColor: homozygous('cream'),
       pattern: homozygous('solid'),
@@ -177,6 +188,7 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     attentionSpan: pet.attentionSpan ?? 300,
     targetPetId: null,
     socialClaimedBy: null,
+    affection: pet.affection ?? 60,
   }
 }
 
@@ -262,6 +274,17 @@ export const usePetStore = create<PetStore>((set) => ({
           continue
         }
 
+        // Player is holding a pointer down on this cat right now — AI is
+        // fully suspended (see behaviorFSM's 'petting' case), and instead
+        // it just gains happiness continuously for as long as it's held,
+        // at a rate personal to how affectionate this particular cat is.
+        if (pet.action === 'petting') {
+          const rate = PETTING_BASE_RATE + (pet.affection / 100) * PETTING_AFFECTION_BONUS
+          const gained = rate * (deltaMs / 1000)
+          moved[id] = { ...pet, needs: { ...pet.needs, happiness: clamp(pet.needs.happiness + gained) } }
+          continue
+        }
+
         // Find the single best thing this pet wants right now — an item or
         // another cat — scoring both through the same urgency*proximity
         // function so they compete on equal footing. See attention.ts.
@@ -286,7 +309,8 @@ export const usePetStore = create<PetStore>((set) => ({
           for (const otherId in pets) {
             if (otherId === id || socialClaimed.has(otherId)) continue
             const other = pets[otherId]
-            if (other.inSuitcase || other.action === 'held' || other.action === 'playing') continue
+            if (other.inSuitcase || other.action === 'held' || other.action === 'playing' || other.action === 'petting')
+              continue
             const distance = Math.hypot(other.position.x - pet.position.x, other.position.y - pet.position.y)
             const score = attentionScore(ownSocialUrgency, distance, pet.attentionSpan)
             if (score > bestScore) {
@@ -429,6 +453,24 @@ export const usePetStore = create<PetStore>((set) => ({
         pets: { ...pets, [petId]: { ...pets[petId], action: 'held', destination: null, targetItemId: null, targetPetId: null } },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
+    }),
+
+  startPetting: (petId) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet || pet.inSuitcase) return state
+      const pets = releaseSocialClaims(state.pets, petId)
+      return {
+        pets: { ...pets, [petId]: { ...pets[petId], action: 'petting', destination: null, targetItemId: null, targetPetId: null } },
+        sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
+      }
+    }),
+
+  endPetting: (petId) =>
+    set((state) => {
+      const pet = state.pets[petId]
+      if (!pet || pet.action !== 'petting') return state
+      return { pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } } }
     }),
 
   dragPetTo: (petId, x, y) =>
@@ -575,6 +617,8 @@ export const usePetStore = create<PetStore>((set) => ({
         attentionSpan: clampAttentionSpan((parentA.attentionSpan + parentB.attentionSpan) / 2 + (Math.random() * 60 - 30)),
         targetPetId: null,
         socialClaimedBy: null,
+        // Same light inheritance-with-variance pattern as attentionSpan.
+        affection: clamp((parentA.affection + parentB.affection) / 2 + (Math.random() * 30 - 15)),
       }
 
       return {

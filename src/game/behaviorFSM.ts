@@ -106,6 +106,13 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
     // petStore.endDragPet() is what transitions it back out of 'held'.
     case 'held':
       return pet
+    // Player is holding a pointer down on this pet to pet it — AI is fully
+    // suspended (same as 'held'), and petStore.endPetting() is what
+    // transitions it back out. The happiness gain itself happens in
+    // petStore.tick(), not here, since it's a continuous per-frame effect
+    // rather than a state transition.
+    case 'petting':
+      return pet
     default:
       return pet
   }

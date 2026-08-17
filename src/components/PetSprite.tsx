@@ -1,5 +1,5 @@
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { Pet } from '../types/pet'
-import { useDraggable } from '../game/useDraggable'
 import { usePetStore } from '../store/petStore'
 import { deriveAppearance } from '../game/appearance'
 import { mousePosition } from '../game/mousePosition'
@@ -27,6 +27,13 @@ const SPOT_POSITIONS = [
 
 const ATTENTION_RADIUS = 260
 const MAX_HEAD_TILT_DEG = 14
+
+// Below this, a still pointer-down-then-up is a click (select); above it,
+// movement is a drag. Shared with the hold-to-pet gesture below: staying
+// under this threshold for HOLD_TO_PET_MS is what makes it a "hold" rather
+// than either a click or a drag.
+const CLICK_THRESHOLD_PX = 4
+const HOLD_TO_PET_MS = 300
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -62,23 +69,65 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   }
 
   const isHeld = pet.action === 'held'
-  const { onPointerDown } = useDraggable(() => pet.position, {
-    onDragStart: () => usePetStore.getState().startDragPet(pet.id),
-    onDragMove: (x, y) => usePetStore.getState().dragPetTo(pet.id, x, y),
-    onDragEnd: (clientX, clientY) => {
-      const droppedOnSuitcase = !!document.elementFromPoint(clientX, clientY)?.closest('.suitcase-panel')
-      if (droppedOnSuitcase) {
-        usePetStore.getState().putPetInSuitcase(pet.id)
-      } else {
-        usePetStore.getState().endDragPet(pet.id)
+  const isPetting = pet.action === 'petting'
+
+  // Pets need a three-way gesture (click to select / hold in place to pet /
+  // drag to carry) instead of the generic click-or-drag useDraggable gives
+  // items and the ball, so this is a bespoke pointer handler rather than a
+  // shared hook. Pickup is deferred until real movement is seen — until
+  // then a still-held pointer is a candidate for petting, not a drag.
+  function onPointerDown(e: ReactPointerEvent) {
+    e.preventDefault()
+    const startPointer = { x: e.clientX, y: e.clientY }
+    const start = pet.position
+    const grabOffsetX = e.clientX - start.x
+    const grabOffsetY = e.clientY - start.y
+    let moved = false
+    let petting = false
+
+    const holdTimer = window.setTimeout(() => {
+      if (moved) return
+      petting = true
+      usePetStore.getState().startPetting(pet.id)
+    }, HOLD_TO_PET_MS)
+
+    function onMove(ev: PointerEvent) {
+      if (petting) return // holding still to pet — not a drag, don't reposition
+      const dist = Math.hypot(ev.clientX - startPointer.x, ev.clientY - startPointer.y)
+      if (!moved && dist > CLICK_THRESHOLD_PX) {
+        moved = true
+        window.clearTimeout(holdTimer)
+        usePetStore.getState().startDragPet(pet.id)
       }
-    },
-    onClick: () => usePetStore.getState().selectPet(pet.id),
-  })
+      if (moved) usePetStore.getState().dragPetTo(pet.id, ev.clientX - grabOffsetX, ev.clientY - grabOffsetY)
+    }
+
+    function onUp(ev: PointerEvent) {
+      window.clearTimeout(holdTimer)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+
+      if (petting) {
+        usePetStore.getState().endPetting(pet.id)
+      } else if (moved) {
+        const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.suitcase-panel')
+        if (droppedOnSuitcase) {
+          usePetStore.getState().putPetInSuitcase(pet.id)
+        } else {
+          usePetStore.getState().endDragPet(pet.id)
+        }
+      } else {
+        usePetStore.getState().selectPet(pet.id)
+      }
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   return (
     <div
-      className={['pet-sprite', selected && 'selected', isHeld && 'dragging'].filter(Boolean).join(' ')}
+      className={['pet-sprite', selected && 'selected', isHeld && 'dragging', isPetting && 'petting'].filter(Boolean).join(' ')}
       style={{ left: pet.position.x, top: pet.position.y }}
       title={pet.name}
       onPointerDown={onPointerDown}

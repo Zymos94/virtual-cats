@@ -8,6 +8,7 @@ import type { Pet } from '../types/pet'
 export type TailMood = 'content' | 'neutral' | 'agitated'
 
 export function getTailMood(pet: Pet): TailMood {
+  if (pet.action === 'petting') return 'content'
   if (pet.action === 'playing') return 'agitated'
   if (pet.needs.hunger < 30 || pet.needs.happiness < 30) return 'agitated'
   if (pet.needs.happiness > 70 && pet.action !== 'walking') return 'content'
