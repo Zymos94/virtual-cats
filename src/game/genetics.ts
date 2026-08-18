@@ -1,17 +1,35 @@
-import type { AllelePair, EyeColor, FurColor, Genetics, Pattern, Size } from '../types/genetics'
+import type {
+  AllelePair,
+  EyeColor,
+  FaceShape,
+  FurColor,
+  Genetics,
+  Pattern,
+  Size,
+} from '../types/genetics'
 
 export const FUR_COLORS: readonly FurColor[] = ['black', 'orange', 'gray', 'cream', 'white']
 export const PATTERNS: readonly Pattern[] = ['solid', 'spotted']
 export const EYE_COLORS: readonly EyeColor[] = ['green', 'blue', 'amber']
 export const SIZES: readonly Size[] = ['small', 'medium', 'large']
+export const FACE_SHAPES: readonly FaceShape[] = [
+  'wedge',
+  'triangle',
+  'trapezoid',
+  'round',
+  'skinny',
+]
 
 // Dominance order per trait: when the two alleles differ, the one listed
-// first wins and becomes the visible trait (the "phenotype").
+// first wins and becomes the visible trait (the "phenotype"). 'wedge'
+// dominant keeps a freshly-bred kitten's odds of looking like the
+// pre-existing default reasonably high.
 const DOMINANCE = {
   furColor: ['black', 'orange', 'gray', 'cream', 'white'],
   pattern: ['spotted', 'solid'],
   eyeColor: ['green', 'blue', 'amber'],
   size: ['medium', 'large', 'small'],
+  faceShape: ['wedge', 'trapezoid', 'triangle', 'round', 'skinny'],
 } satisfies Record<string, readonly string[]>
 
 export function getPhenotype<T extends string>(
@@ -52,6 +70,7 @@ export function randomGenetics(rng: () => number = Math.random): Genetics {
     pattern: randomPair(PATTERNS, rng),
     eyeColor: randomPair(EYE_COLORS, rng),
     size: randomPair(SIZES, rng),
+    faceShape: randomPair(FACE_SHAPES, rng),
   }
 }
 
@@ -72,6 +91,10 @@ export function breedGenetics(a: Genetics, b: Genetics, rng: () => number = Math
     size: {
       allele1: inheritAllele(a.size, SIZES, rng),
       allele2: inheritAllele(b.size, SIZES, rng),
+    },
+    faceShape: {
+      allele1: inheritAllele(a.faceShape, FACE_SHAPES, rng),
+      allele2: inheritAllele(b.faceShape, FACE_SHAPES, rng),
     },
   }
 }

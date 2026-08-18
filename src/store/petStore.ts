@@ -316,6 +316,7 @@ const starterPets: Pet[] = [
       pattern: homozygous('solid'),
       eyeColor: homozygous('green'),
       size: homozygous('medium'),
+      faceShape: homozygous('wedge'),
     },
   }),
   makeStarterPet({
@@ -329,6 +330,7 @@ const starterPets: Pet[] = [
       pattern: homozygous('spotted'),
       eyeColor: homozygous('blue'),
       size: homozygous('small'),
+      faceShape: homozygous('triangle'),
     },
   }),
   makeStarterPet({
@@ -342,6 +344,7 @@ const starterPets: Pet[] = [
       pattern: homozygous('solid'),
       eyeColor: homozygous('amber'),
       size: homozygous('large'),
+      faceShape: homozygous('round'),
     },
   }),
 ]
@@ -372,6 +375,10 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     stridePhase: 0,
     jump: null,
     actionDurationMs: 0,
+    genetics: {
+      ...pet.genetics,
+      faceShape: pet.genetics.faceShape ?? homozygous('wedge'),
+    },
   }
 }
 

@@ -157,7 +157,11 @@ than duplicating the math.
   functions, same `(entity, context) → entity` shape as the cat's FSM/movement, much simpler (no
   needs, no gaits).
 - `src/game/genetics.ts` / `src/types/genetics.ts` — Mendelian-style allele pairs, dominance,
-  mutation.
+  mutation. Traits: fur color, pattern, eye color, size, face shape.
+- `src/game/faceShapes.ts` — per-`faceShape`-phenotype `FaceShapeDef` (head outline, both ears'
+  points+pivot, eye pair, nose/mouth/whisker anchor), resolved by `deriveAppearance` and consumed
+  by `PetSprite.tsx`. Added M24 so face geometry is data keyed by phenotype rather than hardcoded
+  to one shape — see the M24 entry in DEVLOG.md before adding a 6th shape or moving an anchor.
 - `src/game/breedName.ts` — genetics → pedestrian breed name.
 - `src/game/lifeStage.ts` — kitten/adult/senior derived from `ageMs`, not stored.
 - `src/game/personality.ts` — `affection` trait → label.

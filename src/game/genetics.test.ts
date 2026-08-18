@@ -25,6 +25,7 @@ const orangeCat: Genetics = {
   pattern: homozygous('solid'),
   eyeColor: homozygous('green'),
   size: homozygous('medium'),
+  faceShape: homozygous('wedge'),
 }
 
 const graySpottedCat: Genetics = {
@@ -32,6 +33,7 @@ const graySpottedCat: Genetics = {
   pattern: homozygous('spotted'),
   eyeColor: homozygous('blue'),
   size: homozygous('small'),
+  faceShape: homozygous('triangle'),
 }
 
 describe('breedGenetics', () => {
@@ -50,6 +52,7 @@ describe('breedGenetics', () => {
     expect(['solid', 'spotted']).toContain(kitten.pattern.allele1)
     expect(['green', 'blue']).toContain(kitten.eyeColor.allele1)
     expect(['medium', 'small']).toContain(kitten.size.allele1)
+    expect(['wedge', 'triangle']).toContain(kitten.faceShape.allele1)
   })
 
   it('is deterministic for a fixed rng sequence', () => {

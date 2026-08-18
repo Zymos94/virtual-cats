@@ -24,14 +24,10 @@ const SPOT_POSITIONS = [
   { x: 30, y: 25, r: 2 },
 ]
 
-// Eye geometry, in head-local coordinates (drawn facing right).
-const EYE_XS = [55, 63]
-const EYE_Y = 23
-// Nose/mouth/whiskers all anchor off this one point — just ahead of and
-// below the eyes, on the muzzle. Pulled back a bit from the head polygon's
-// front corner (74,34) so it doesn't read as jammed into the corner.
-const NOSE_X = 66
-const NOSE_Y = 29
+// Eye/nose/mouth/whisker anchor points now come from the cat's own
+// FaceShapeDef (src/game/faceShapes.ts) — head-shape-dependent, since a
+// fixed offset only ever matched the one original wedge outline. See
+// faceShape below.
 // How long the mouth flashes open in a little "O" after a click-select
 // meow — the only vocalization moment PetSprite.tsx has direct visibility
 // into (a hungry-meow/hiss/growl are triggered store-side in petStore.ts,
@@ -220,7 +216,14 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   // never looks perfectly frozen — same desync trick as blinking/gaze.
   const holdTiltDeg = eased.hold * (eased.holdTilt + Math.sin(now / 900 + hash) * 2.5)
 
-  const { body, stroke, eye, scale: geneticScale, spotted } = deriveAppearance(pet.genetics)
+  const {
+    body,
+    stroke,
+    eye,
+    scale: geneticScale,
+    spotted,
+    faceShape,
+  } = deriveAppearance(pet.genetics)
   const scale = geneticScale * getLifeStageScale(getLifeStage(pet.ageMs))
   const facingLeft = pet.facing === 'left'
   const xScale = facingLeft ? -scale : scale
@@ -290,7 +293,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   let gazeStrength: number
   if (gaze) {
     const headWorldX = pet.position.x + (facingLeft ? SVG_WIDTH - 58 : 58)
-    const headWorldY = pet.position.y + EYE_Y
+    const headWorldY = pet.position.y + faceShape.eyeY
     gazeDx = (gaze.x - headWorldX) * (facingLeft ? -1 : 1)
     gazeDy = gaze.y - headWorldY
     gazeStrength = gaze.strength
@@ -346,8 +349,8 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   // (eased.shiftX/Y) — a smaller fraction of it, so the whole muzzle reads
   // as turning together with the eyes toward whatever they're tracking,
   // rather than the eyes alone doing all the directional work.
-  const noseCx = NOSE_X + eased.shiftX * 0.5
-  const noseCy = NOSE_Y + eased.shiftY * 0.5
+  const noseCx = faceShape.noseX + eased.shiftX * 0.5
+  const noseCy = faceShape.noseY + eased.shiftY * 0.5
 
   // A flank-lick dips the head down toward the cat's own side in a slow
   // rhythmic bob; a paw-wash follows the raised paw with a smaller,
@@ -605,24 +608,49 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               transformOrigin: `${HEAD_PIVOT_LOCAL.x}px ${HEAD_PIVOT_LOCAL.y}px`,
             }}
           >
-            <polygon points="42,34 50,12 66,12 74,34" fill={body} stroke={stroke} strokeWidth={2} />
+            {faceShape.head.kind === 'polygon' ? (
+              <polygon points={faceShape.head.points} fill={body} stroke={stroke} strokeWidth={2} />
+            ) : (
+              <ellipse
+                cx={faceShape.head.cx}
+                cy={faceShape.head.cy}
+                rx={faceShape.head.rx}
+                ry={faceShape.head.ry}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={2}
+              />
+            )}
             <g
               style={{
                 transform: `rotate(${earFlickDeg(0)}deg)`,
-                transformOrigin: '52.5px 14.5px',
+                transformOrigin: `${faceShape.earLeft.pivot.x}px ${faceShape.earLeft.pivot.y}px`,
               }}
             >
-              <polygon points="47,14 53,2 58,15" fill={body} stroke={stroke} strokeWidth={1.5} />
+              <polygon
+                points={faceShape.earLeft.points}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={1.5}
+              />
             </g>
             <g
-              style={{ transform: `rotate(${earFlickDeg(1)}deg)`, transformOrigin: '65px 14.5px' }}
+              style={{
+                transform: `rotate(${earFlickDeg(1)}deg)`,
+                transformOrigin: `${faceShape.earRight.pivot.x}px ${faceShape.earRight.pivot.y}px`,
+              }}
             >
-              <polygon points="60,15 65,2 70,14" fill={body} stroke={stroke} strokeWidth={1.5} />
+              <polygon
+                points={faceShape.earRight.points}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={1.5}
+              />
             </g>
 
-            {EYE_XS.map((ex) => {
+            {faceShape.eyeXs.map((ex) => {
               const cx = ex + eased.shiftX
-              const cy = EYE_Y + eased.shiftY
+              const cy = faceShape.eyeY + eased.shiftY
               if (eyesClosed) {
                 // A soft downward arc — the same closed eye works for a
                 // blink, deep sleep, and blissed-out petting.

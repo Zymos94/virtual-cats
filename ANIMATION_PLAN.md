@@ -44,7 +44,21 @@ first phase here that actually needs the migration system.
   facing-mirror math, now pinned down by a test) and a per-ear ear-flick twitch. Verified live via
   deterministic state forcing in a real browser, including specifically checking the tail-wrap
   direction on both facings.
-- ⬜ A4–A7 — not started.
+- ✅ **Face-shape gene — done** (M24, jumped the queue like A1–A3, owner request). Added
+  `faceShape` as a 5th genetic trait (`wedge`/`triangle`/`trapezoid`/`round`/`skinny`, `wedge`
+  dominant so existing cats don't shift look) following the existing allele-pair pattern in
+  `genetics.ts`. Landed via the same ad-hoc `?? default` load-patch precedent as `attentionSpan`/
+  `affection` (`sanitizeLoadedPet` in `petStore.ts`) rather than a real migration, since
+  `ARCHITECTURE.md` Phase 7's migration system still hasn't landed — **A4's tail/leg/fur-length
+  traits below should follow the same precedent** until it does. The real work was forcing
+  `PetSprite.tsx`'s previously-hardcoded head/ear/eye/nose/mouth/whisker constants into a
+  per-shape data lookup (`FaceShapeDef` in new `src/game/faceShapes.ts`: outline, both ear
+  pivots, eye pair, nose/mouth anchor), resolved through `deriveAppearance` — this is the
+  parametric face-positioning groundwork Phase A4/A5 below assumed would exist, done a bit early.
+  Verified with 5 temporary test cats (one per shape, both facings, blink/petting closed-eye
+  state) via the `__petStore` debug hook + screenshots; the 3 starter cats now carry distinct
+  shapes (Whiskers=wedge, Mittens=triangle, Tom=round) as a live showcase.
+- ⬜ A4 (remaining traits) –A7 — not started.
 
 ## Decisions made (owner-confirmed, do not re-litigate)
 
@@ -131,6 +145,14 @@ silhouette pass), ear size, body length. Everything in `catPose.ts` that is curr
 values as the defaults. **Renderer capability lands first (debug-tweakable), genetics wiring is a
 separate phase.**
 
+`src/game/faceShapes.ts` (M24) is a smaller-scale version of exactly this pattern, already built:
+a `Record<PhenotypeValue, ShapeDef>` where each entry carries both the outline geometry _and_ the
+attachment points (ear pivots, eye/nose anchors) that depend on it, looked up once per render via
+the resolved phenotype rather than hardcoded. `BodyPlan` should follow the same shape — e.g. tail
+length shouldn't just resize the existing anchor, it needs its own segment-count/radius table the
+way each face shape has its own eye/nose coordinates, not a single scale factor applied to wedge's
+numbers.
+
 ### 4. View system (Phases A5–A6)
 
 `pickView(direction, previousView)` bins movement direction into side / front / back (later
@@ -142,6 +164,41 @@ becomes foot lift + slight lateral sway; near/far leg pairs become left/right pa
 
 The current head is already a cartoon cheat (both eyes visible in "profile"), so the head, eyes,
 gaze-tracking, and blink systems largely carry across views — the per-view work is body and legs.
+
+**Whisker visibility as a facing signal (owner idea, M24, deliberately deferred here rather than
+built now):** today's "facing" is a CSS horizontal mirror of one side-view — there's only ever one
+whisker fan-pair silhouette to mirror, so there's no real front/back to differentiate. A cat only
+plausibly reads as showing "one pair of whiskers visible, depending on which way it's facing"
+once there's an actual front/back geometry to be _not_ side-on to — i.e. this is a natural
+side-effect of Phase A5 (front/back views) landing, not a standalone hack on the current
+single-view renderer. Concretely, once A5 exists: side view keeps today's near+far two-fan
+treatment (M23), front view would show a single centered whisker fan (both real-world pads visible
+at once, no near/far distinction), back view shows none. Worth a one-line callout in A5's own
+verification pass rather than a separate phase.
+
+### 5. Facial expressiveness (post-A4, informed by the M24 face-shape work)
+
+Building `faceShapes.ts` surfaced a lesson worth carrying forward: once eye/nose/mouth anchors are
+data (per-shape, not hardcoded), the same lookup can drive _mood_, not just _shape_. Ideas for a
+later phase, roughly in order of how cheap they'd be given the current data model:
+
+- **Ear position as mood signal** — `earFlickDeg`'s per-ear rotation already exists for the idle
+  twitch; a sustained pinned-back rotation (vs. the momentary flick) is the classic "annoyed/
+  startled" cat tell and reuses the same rotation-around-pivot mechanism, just driven by mood
+  instead of a timer.
+- **Pupil dilation** — the eye already draws a separate pupil ellipse (`eased.pupilX/Y` for
+  tracking); scaling its radius with excitement/fear (playing with a toy vs. startled by a loud
+  interaction) is a pure render-side addition, no new state.
+- **Brow/eye-shape tilt** — `MAX_HEAD_TILT_DEG` already tilts the whole head toward a gaze target;
+  a smaller-scale asymmetric tilt of just the eye ellipses (one raised, one lowered) is how
+  cartoon expressiveness usually reads as "confused" or "suspicious" without new geometry.
+- **Per-shape mouth/eye scaling** — right now every shape's mouth curve and eye ellipse use the
+  same fixed radii regardless of head size (e.g. `round`'s bigger outline vs. `skinny`'s narrower
+  one). A `BodyPlan`-driven scale factor (Phase A4) would make expressions read proportionally
+  right across shapes instead of a `skinny` cat's mouth looking oversized relative to its face.
+
+None of this is scheduled — it's what A4's `BodyPlan` scale-factor work and the `faceShapes.ts`
+per-shape anchor data make newly _cheap_, worth a look once both exist.
 
 ## Phased execution plan
 
@@ -179,12 +236,19 @@ loops don't pop on entry/exit.
 
 ### Phase A4 — BodyPlan + real genetic traits
 
-Introduce `BodyPlan` reads throughout the pose layer (defaults = today's constants). Then wire
-**tail length (incl. bob), leg length, fur length** as inheritable traits following the existing
-allele-pair pattern in `genetics.ts`, with starter-cat values, mutation, and breed-name extension
-("Bobtail", "Fluffy", …). **Save migration required** for the new genetics fields — use the
-Phase-7 migration system. Also fold in the deferred tail-carriage/flick-threshold genetics idea
-(see `DEVLOG.md` "Deferred") — it's a plain numeric field and this is its natural home.
+Introduce `BodyPlan` reads throughout the pose layer (defaults = today's constants) — see the
+`faceShapes.ts` precedent in Target architecture §3 for the shape a per-shape/per-trait data table
+should take. Then wire **tail length (incl. bob), leg length, fur length** as inheritable traits
+following the existing allele-pair pattern in `genetics.ts` (the `faceShape` trait added in M24 is
+a worked example of the whole pipeline: type → `genetics.ts` dominance/mutation → starter-cat
+values → store load-patch → derived-appearance resolution → renderer lookup), with starter-cat
+values, mutation, and breed-name extension ("Bobtail", "Fluffy", …). **Save migration required for
+real** once Phase 7 lands; until then, follow the ad-hoc `?? default` load-patch precedent
+`faceShape` used in `sanitizeLoadedPet` (`petStore.ts`) rather than blocking on Phase 7 — that
+patch is cheap to later fold into a real migration, and matches how every other field added since
+the original save shape has been handled. Also fold in the deferred tail-carriage/flick-threshold
+genetics idea (see `DEVLOG.md` "Deferred") — it's a plain numeric field and this is its natural
+home.
 **Verify:** breed two dissimilar cats repeatedly; kittens visibly inherit; old saves load clean.
 
 ### Phase A5 — Front + back views

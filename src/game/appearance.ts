@@ -1,5 +1,6 @@
 import type { Genetics } from '../types/genetics'
 import { getPhenotype } from './genetics'
+import { FACE_SHAPES, type FaceShapeDef } from './faceShapes'
 
 const FUR_HEX: Record<string, { body: string; stroke: string }> = {
   black: { body: '#4a4a4a', stroke: '#1f1f1f' },
@@ -27,6 +28,7 @@ export interface Appearance {
   eye: string
   scale: number
   spotted: boolean
+  faceShape: FaceShapeDef
 }
 
 // Scales a #rrggbb color toward black — used to shade the far-side pair
@@ -47,6 +49,7 @@ export function deriveAppearance(genetics: Genetics): Appearance {
   const eyeColor = getPhenotype('eyeColor', genetics.eyeColor)
   const size = getPhenotype('size', genetics.size)
   const pattern = getPhenotype('pattern', genetics.pattern)
+  const faceShape = getPhenotype('faceShape', genetics.faceShape)
   const { body, stroke } = FUR_HEX[furColor]
 
   return {
@@ -55,5 +58,6 @@ export function deriveAppearance(genetics: Genetics): Appearance {
     eye: EYE_HEX[eyeColor],
     scale: SIZE_SCALE[size],
     spotted: pattern === 'spotted',
+    faceShape: FACE_SHAPES[faceShape],
   }
 }

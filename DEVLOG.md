@@ -611,6 +611,52 @@ actually simulated.
   `EYE_XS` already uses for both eyes despite the true side-profile view, now applied
   consistently to whiskers too.
 
+### M24: a face-shape gene, and making face geometry actually parametric (2026-08-18)
+
+Follow-up to M23's face feedback: the user wanted a new genetic trait — face shape — used
+as the forcing function to fix something M23 had only patched around. Every face feature
+(head outline, both ears, eyes, nose/mouth/whiskers) was hardcoded to one specific polygon;
+M23's nose-position fix was a tuned constant that only happened to work for that one shape.
+Adding a second shape meant it couldn't stay hardcoded.
+
+- **`faceShape` genetic trait.** Added as a 5th allele-pair trait in `genetics.ts`/
+  `types/genetics.ts`, same Mendelian pattern as the other four: `wedge` (the original
+  shape, kept dominant so existing cats' looks don't shift), `triangle`, `trapezoid`,
+  `round`, `skinny`. The 3 starter cats got distinct shapes (Whiskers=wedge,
+  Mittens=triangle, Tom=round) as a live showcase rather than a dedicated test cat — cheap
+  and permanent instead of temporary. Old saves predate this field entirely; patched via
+  the same ad-hoc `?? default` precedent `sanitizeLoadedPet` already uses for
+  `attentionSpan`/`affection`, not a real migration (`ARCHITECTURE.md` Phase 7 still
+  hasn't landed) — confirmed by reloading against a pre-M24 localStorage save, which
+  crashed on `getPhenotype('faceShape', undefined)` before the patch was added.
+- **Face geometry became data, not hardcoded constants.** New `src/game/faceShapes.ts`:
+  one `FaceShapeDef` per shape, carrying the head outline (polygon or, for `round`, an
+  actual ellipse — not everything is a polygon), both ears with their own flick pivot, the
+  eye pair, and the nose/mouth/whisker anchor point, each hand-derived against its own
+  outline rather than borrowed from `wedge`. `deriveAppearance` resolves the phenotype and
+  returns the matching `FaceShapeDef`; `PetSprite.tsx`'s previously-hardcoded
+  `EYE_XS`/`EYE_Y`/`NOSE_X`/`NOSE_Y` constants and the two hardcoded ear `<polygon>`s are
+  gone, replaced by reads off the resolved shape. Gaze-shift, blink/closed-eye, ear-flick
+  rotation, and the two-whisker-fan treatment (M23) all carry through unchanged since they
+  were already written against anchor _values_, not literals.
+- **Verified visually, not just by typecheck.** Five temporary test cats (one per shape),
+  spaced out via the `__petStore` debug hook with the sim paused, screenshotted and
+  zoomed individually — checked each shape's eyes/nose/whiskers actually sit on its own
+  outline (not floating or crammed into a corner, the exact M23 complaint), then repeated
+  for `facing: 'left'` (confirms the CSS mirror still works against per-shape coordinates)
+  and a forced `petting` action (confirms the closed-eye arc still lands correctly per
+  shape). All read clearly. Reset the game afterward to clear the test roster from
+  `localStorage`.
+- **Whisker-visibility-by-facing, considered and deliberately deferred.** The user raised,
+  then self-corrected on, an idea: only one whisker pair visible at a time, depending on
+  facing direction. Today's "facing" is a CSS mirror of a single side-view — there's no
+  actual front/back geometry to differentiate, so this isn't buildable as a small hack;
+  it's a natural side-effect of the still-unbuilt Phase A5/A6 view system in
+  `ANIMATION_PLAN.md`. Documented there instead of built now — see that file's updated
+  view-system section and its new "Facial expressiveness" forward-looking notes (ear
+  position as mood signal, pupil dilation, per-shape mouth/eye scaling once `BodyPlan`
+  lands).
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future
@@ -683,11 +729,15 @@ memory notes — just flag it here if you start one.
 
 ## Where to pick up
 
-There's no queued "next milestone" right now — M8 through M18 plus a
-polish round are all shipped and pushed to `main`. This is a natural
-pause point. Likely next directions, roughly in order of how directly
-they were signaled by the user: whatever new design problems get raised
-next, then the two deferred ideas above (floor materials tends to imply
-a maps/rooms feature first), then general polish. Check `git log` for
-anything committed after this file's date before assuming this summary
-is still current.
+There's no queued "next milestone" right now — M8 through M24 are all
+shipped. This is a natural pause point. `ANIMATION_PLAN.md`'s Phase A4
+(BodyPlan + remaining genetic traits: tail length, leg length, fur
+length) is the most concretely scoped next animation-track step, and
+now has a worked example to follow (`faceShape`, M24) plus a documented
+precedent for handling the save-migration gap. Otherwise, likely next
+directions, roughly in order of how directly they were signaled by the
+user: whatever new design problems get raised next, then the two
+deferred ideas above (floor materials tends to imply a maps/rooms
+feature first), then general polish. Check `git log` for anything
+committed after this file's date before assuming this summary is still
+current.

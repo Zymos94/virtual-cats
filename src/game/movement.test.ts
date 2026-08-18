@@ -18,6 +18,7 @@ function makePet(overrides: Partial<Pet> = {}): Pet {
       pattern: { allele1: 'solid', allele2: 'solid' },
       eyeColor: { allele1: 'green', allele2: 'green' },
       size: { allele1: 'medium', allele2: 'medium' },
+      faceShape: { allele1: 'wedge', allele2: 'wedge' },
     },
     parentIds: null,
     inSuitcase: false,
