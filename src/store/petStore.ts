@@ -3,11 +3,18 @@ import { nanoid } from 'nanoid'
 import type { ActionState, Needs, Pet } from '../types/pet'
 import type { Genetics } from '../types/genetics'
 import type { PlacedItem } from '../types/item'
+import type { Mouse } from '../types/mouse'
 import { updatePetBehavior } from '../game/behaviorFSM'
 import { movePet } from '../game/movement'
 import { breedGenetics } from '../game/genetics'
 import { ITEM_DEFINITIONS } from '../data/itemDefinitions'
-import { attentionScore, itemUrgency, socialUrgency, type AttentionTarget } from '../game/attention'
+import {
+  attentionScore,
+  itemUrgency,
+  mouseUrgency,
+  socialUrgency,
+  type AttentionTarget,
+} from '../game/attention'
 import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
@@ -15,10 +22,22 @@ import { initialSegments, stepChain, type Point } from '../game/tailPhysics'
 import { TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 import { STARTER_AGE_MS } from '../game/lifeStage'
 import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
+import {
+  MOUSE_DETECT_RADIUS,
+  MOUSE_STALK_DETECT_RADIUS,
+  updateMouseBehavior,
+} from '../game/mouseBehavior'
+import { moveMouse } from '../game/mouseMovement'
+import { WALL_BAND_FRACTION } from '../game/roomLayout'
 
 interface PetStore {
   pets: Record<string, Pet>
   sceneItems: Record<string, PlacedItem>
+  // Autonomous mice — a separate slice from sceneItems since they have
+  // their own AI/movement (see mouseBehavior.ts/mouseMovement.ts) rather
+  // than being physics-driven objects a cat "uses." Never persisted (see
+  // persist.ts) — a reload just starts with none, same as tailSegments.
+  mice: Record<string, Mouse>
   // Tail chain positions in scene coordinates, one array per pet — kept
   // here (not component state) so they keep relaxing every real frame even
   // for pets that aren't currently moving. See tailPhysics.ts for why.
@@ -102,8 +121,29 @@ const POUNCE_MISS_DISTANCE = 48
 // Stalking: closer than this to a grounded toy (but still outside pounce
 // range), a trotting approach drops into a crouched slink instead — reads
 // as one continuous stalk-then-pounce motion rather than a trot that
-// abruptly leaps.
+// abruptly leaps. Reused as-is for mice — same shape of chase.
 const STALK_RANGE = 200
+
+// A mouse-pounce landing further than this from the mouse's actual
+// position by the time the leap completes is a miss — the mouse noticed
+// the leap and darted clear. Tighter than POUNCE_MISS_DISTANCE since a
+// mouse is a much smaller target than a rolling ball.
+const MOUSE_CATCH_DISTANCE = 34
+// How long a cat holds a caught mouse in its jaws before chucking it.
+const HOLD_MOUSE_MS = 2200
+// How far the chuck hop throws the mouse.
+const MOUSE_CHUCK_DISTANCE = 110
+const MOUSE_CHUCK_DURATION_MS = 300
+// "usually" keeps pursuing, per the design brief — not always, so a chase
+// occasionally just ends instead of looping forever.
+const MOUSE_RECHASE_CHANCE = 0.75
+// Close enough to the mouse hole that a fleeing mouse escapes — despawns
+// outright, its goal met.
+const MOUSE_HOLE_DESPAWN_RANGE = 20
+// Where a held mouse renders relative to its holder's own position —
+// roughly the mouth, offset in the direction the cat is facing.
+const MOUSE_MOUTH_OFFSET_X = 24
+const MOUSE_MOUTH_OFFSET_Y = 6
 
 // Very high on purpose — the panel should feel grabby, not slippery. A
 // released panel travels only a token distance before stopping, unlike a
@@ -160,6 +200,23 @@ function releaseSocialClaims(pets: Record<string, Pet>, petId: string): Record<s
   return result
 }
 
+function makeMouse(id: string, position: { x: number; y: number }, now: number): Mouse {
+  return {
+    id,
+    position,
+    destination: null,
+    state: 'sneaking',
+    facing: Math.random() < 0.5 ? 'left' : 'right',
+    actionStartedAt: now,
+    lastThreatenedAt: 0,
+    claimedBy: null,
+    heldBy: null,
+    currentSpeed: 0,
+    stridePhase: 0,
+    jump: null,
+  }
+}
+
 function applyDecay(pet: Pet): Pet {
   return {
     ...pet,
@@ -192,6 +249,7 @@ function makeStarterPet(
     targetItemId: null,
     attentionSpan: 300,
     targetPetId: null,
+    targetMouseId: null,
     socialClaimedBy: null,
     affection: 60,
     ageMs: STARTER_AGE_MS,
@@ -263,6 +321,7 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     targetItemId: null,
     attentionSpan: pet.attentionSpan ?? 300,
     targetPetId: null,
+    targetMouseId: null,
     socialClaimedBy: null,
     affection: pet.affection ?? 60,
     ageMs: pet.ageMs ?? STARTER_AGE_MS,
@@ -273,10 +332,35 @@ function sanitizeLoadedPet(pet: Pet): Pet {
   }
 }
 
+// One mouse hole against the (top) wall by default, so there's always
+// somewhere for a mouse to escape to without the player needing to
+// remember to place one themselves first — same as the starter cats, it's
+// just a normal placeable item (see ITEM_DEFINITIONS's 'mousehole') that
+// happens to be pre-placed; the player can drag it elsewhere or add more.
+function makeStarterMouseHole(bounds: { width: number; height: number }): PlacedItem {
+  const id = nanoid()
+  return {
+    id,
+    itemTypeId: 'mousehole',
+    // Exactly on the wall/floor line — the arch itself (see
+    // ItemSprite.tsx's 'hole' rendering) is anchored by its flat bottom
+    // edge to this same point, so the whole tall dome extends *up* into
+    // the wall band from here, reading as a hole cut into the wall.
+    position: { x: 70, y: bounds.height * WALL_BAND_FRACTION },
+    height: 0,
+    velocity: { x: 0, y: 0 },
+    verticalVelocity: 0,
+    claimedBy: null,
+    held: false,
+  }
+}
+
 function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<string, PlacedItem> } {
   const saved = loadFromLocalStorage()
-  if (!saved || Object.keys(saved.pets).length === 0)
-    return { pets: freshStarterPets(), sceneItems: {} }
+  if (!saved || Object.keys(saved.pets).length === 0) {
+    const hole = makeStarterMouseHole({ width: window.innerWidth, height: window.innerHeight })
+    return { pets: freshStarterPets(), sceneItems: { [hole.id]: hole } }
+  }
 
   const pets: Record<string, Pet> = {}
   for (const id in saved.pets) pets[id] = sanitizeLoadedPet(saved.pets[id])
@@ -298,9 +382,10 @@ function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<str
 
 const initialState = loadInitialState()
 
-export const usePetStore = create<PetStore>((set) => ({
+export const usePetStore = create<PetStore>((set, get) => ({
   pets: initialState.pets,
   sceneItems: initialState.sceneItems,
+  mice: {},
   tailSegments: {},
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
@@ -377,9 +462,85 @@ export const usePetStore = create<PetStore>((set) => ({
           ? stepItemPhysics(item, definition.physics, deltaMs, state.sceneBounds)
           : item
       }
+      // A dropped mouse item falls like anything else (see stepItemPhysics
+      // above); the instant it's fully at rest it "wakes up" — deleted
+      // from sceneItems, replaced by an autonomous Mouse at the same spot.
+      let mice = state.mice
+      for (const itemId in sceneItems) {
+        const item = sceneItems[itemId]
+        const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
+        if (
+          definition?.category === 'prey' &&
+          !item.held &&
+          item.height === 0 &&
+          item.verticalVelocity === 0 &&
+          Math.hypot(item.velocity.x, item.velocity.y) < 5
+        ) {
+          delete sceneItems[itemId]
+          mice = { ...mice, [itemId]: makeMouse(itemId, item.position, now) }
+        }
+      }
+
+      // Live position of a mouse hole, if the player still has one placed
+      // — a fleeing mouse's goal, and its escape/despawn condition below.
+      let holePosition: { x: number; y: number } | null = null
+      for (const itemId in sceneItems) {
+        const definition = ITEM_DEFINITIONS.find((d) => d.id === sceneItems[itemId].itemTypeId)
+        if (definition?.category === 'hole') {
+          holePosition = sceneItems[itemId].position
+          break
+        }
+      }
+
+      // Mice are fully autonomous — their own AI runs independently of any
+      // cat, using last tick's cat positions (one tick of lag, imperceptible)
+      // to decide whether they've been spotted. Held mice skip this
+      // entirely; the pet loop below repositions them to their holder's
+      // mouth once cat positions are final for this tick.
+      const mouseTopMargin = state.sceneBounds.height * WALL_BAND_FRACTION + 20
+      const nextMice: Record<string, Mouse> = {}
+      for (const mouseId in mice) {
+        let mouse = mice[mouseId]
+        if (mouse.state !== 'held') {
+          let spotted = false
+          let nearestThreatPosition: { x: number; y: number } | null = null
+          let nearestDist = Infinity
+          for (const petId in state.pets) {
+            const cat = state.pets[petId]
+            if (cat.inSuitcase) continue
+            const distance = Math.hypot(
+              cat.position.x - mouse.position.x,
+              cat.position.y - mouse.position.y,
+            )
+            const detectRadius =
+              cat.action === 'stalking' ? MOUSE_STALK_DETECT_RADIUS : MOUSE_DETECT_RADIUS
+            if (distance < detectRadius) spotted = true
+            if (distance < nearestDist) {
+              nearestDist = distance
+              nearestThreatPosition = cat.position
+            }
+          }
+          mouse = updateMouseBehavior(mouse, {
+            now,
+            sceneBounds: state.sceneBounds,
+            topMargin: mouseTopMargin,
+            spotted,
+            nearestThreatPosition,
+            holePosition,
+          })
+          mouse = moveMouse(mouse, deltaMs)
+        }
+        nextMice[mouseId] = mouse
+      }
+      mice = nextMice
+
       const claimed = new Set<string>()
       for (const itemId in sceneItems) {
         if (sceneItems[itemId].claimedBy) claimed.add(itemId)
+      }
+      const mouseClaimed = new Set<string>()
+      for (const mouseId in mice) {
+        if (mice[mouseId].claimedBy) mouseClaimed.add(mouseId)
       }
 
       // Cats already being approached by someone (from a previous tick, or
@@ -415,9 +576,67 @@ export const usePetStore = create<PetStore>((set) => ({
           continue
         }
 
-        // Find the single best thing this pet wants right now — an item or
-        // another cat — scoring both through the same urgency*proximity
-        // function so they compete on equal footing. See attention.ts.
+        // Holding a caught mouse in its jaws — like 'petting', fully
+        // store-side rather than run through the FSM, since both starting
+        // and ending this needs to mutate the mouse too. Waits out
+        // HOLD_MOUSE_MS, then chucks it: the mouse gets a hop away and
+        // starts fleeing again, and this cat usually (not always, see
+        // MOUSE_RECHASE_CHANCE) goes right back to chasing it.
+        if (pet.action === 'holdingMouse') {
+          if (now - pet.actionStartedAt < HOLD_MOUSE_MS) {
+            moved[id] = pet
+            continue
+          }
+          const heldMouseId = pet.targetMouseId
+          const heldMouse = heldMouseId ? mice[heldMouseId] : undefined
+          if (!heldMouse) {
+            // Defensive: the mouse vanished somehow — just let go.
+            moved[id] = { ...pet, action: 'idle', targetMouseId: null, actionStartedAt: now }
+            continue
+          }
+          const dirX = pet.facing === 'left' ? -1 : 1
+          const chuckTo = clampToRoom(
+            {
+              x: pet.position.x + dirX * MOUSE_CHUCK_DISTANCE + (Math.random() - 0.5) * 40,
+              y: pet.position.y + (Math.random() - 0.5) * 40,
+            },
+            state.sceneBounds,
+          )
+          // "usually" keeps pursuing, per the design brief — not always.
+          // If not, release the claim too, or nobody could ever target
+          // this mouse again once it's off chasing freely.
+          const keepChasing = Math.random() < MOUSE_RECHASE_CHANCE
+          mice = {
+            ...mice,
+            [heldMouseId!]: {
+              ...heldMouse,
+              state: 'fleeing',
+              heldBy: null,
+              claimedBy: keepChasing ? id : null,
+              lastThreatenedAt: now,
+              destination: null,
+              jump: {
+                from: pet.position,
+                to: chuckTo,
+                progressMs: 0,
+                durationMs: MOUSE_CHUCK_DURATION_MS,
+              },
+            },
+          }
+          moved[id] = {
+            ...pet,
+            action: keepChasing ? 'walking' : 'idle',
+            destination: keepChasing ? chuckTo : null,
+            targetMouseId: keepChasing ? heldMouseId! : null,
+            actionStartedAt: now,
+          }
+          continue
+        }
+
+        // Find the single best thing this pet wants right now — an item,
+        // another cat, or a mouse — scoring all three through the same
+        // urgency*proximity function so they compete on equal footing.
+        // See attention.ts.
         let bestTarget: AttentionTarget | null = null
         let bestScore = 0
 
@@ -434,6 +653,24 @@ export const usePetStore = create<PetStore>((set) => ({
           if (score > bestScore) {
             bestScore = score
             bestTarget = { kind: 'item', id: item.id, position: item.position }
+          }
+        }
+
+        const ownMouseUrgency = mouseUrgency(pet)
+        if (ownMouseUrgency > 0) {
+          for (const mouseId in mice) {
+            if (mouseClaimed.has(mouseId)) continue
+            const mouse = mice[mouseId]
+            if (mouse.state === 'held') continue
+            const distance = Math.hypot(
+              mouse.position.x - pet.position.x,
+              mouse.position.y - pet.position.y,
+            )
+            const score = attentionScore(ownMouseUrgency, distance, pet.attentionSpan)
+            if (score > bestScore) {
+              bestScore = score
+              bestTarget = { kind: 'mouse', id: mouseId, position: mouse.position }
+            }
           }
         }
 
@@ -472,6 +709,13 @@ export const usePetStore = create<PetStore>((set) => ({
           socialClaimed.add(decided.targetPetId)
           newSocialClaims[decided.targetPetId] = id
         }
+        if (decided.targetMouseId && decided.targetMouseId !== pet.targetMouseId) {
+          mouseClaimed.add(decided.targetMouseId)
+          const claimedMouse = mice[decided.targetMouseId]
+          if (claimedMouse) {
+            mice = { ...mice, [decided.targetMouseId]: { ...claimedMouse, claimedBy: id } }
+          }
+        }
 
         // Keep chasing a moving target (e.g. a rolling ball, or a cat that
         // hasn't noticed it's being approached yet) by re-aiming at its
@@ -493,6 +737,17 @@ export const usePetStore = create<PetStore>((set) => ({
           } else {
             // Target vanished (picked up, put away) — give up and reconsider.
             decided = { ...decided, action: 'idle', destination: null, targetPetId: null }
+          }
+        } else if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetMouseId
+        ) {
+          const target = mice[decided.targetMouseId]
+          if (target && target.state !== 'held') {
+            decided = { ...decided, destination: target.position }
+          } else {
+            // Caught by someone else, or otherwise vanished — give up.
+            decided = { ...decided, action: 'idle', destination: null, targetMouseId: null }
           }
         }
 
@@ -551,6 +806,63 @@ export const usePetStore = create<PetStore>((set) => ({
           }
         }
 
+        // Sneaking up on a mouse — identical shape to the toy stalk above,
+        // just no category/height gate since every mouse qualifies.
+        if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetMouseId &&
+          !decided.jump
+        ) {
+          const target = mice[decided.targetMouseId]
+          if (target && target.state !== 'held') {
+            const dist = Math.hypot(
+              target.position.x - decided.position.x,
+              target.position.y - decided.position.y,
+            )
+            if (dist < STALK_RANGE && dist > POUNCE_RANGE && decided.action === 'walking') {
+              decided = { ...decided, action: 'stalking' }
+            } else if (dist >= STALK_RANGE && decided.action === 'stalking') {
+              decided = { ...decided, action: 'walking' }
+            }
+          }
+        }
+
+        // Close enough to a mouse — leap the last stretch, same as a toy
+        // pounce. The leap itself is what a sneaking mouse finally
+        // notices — even a successful stalk ends here, not before, so it
+        // gets flagged 'fleeing' the instant the jump is thrown, before
+        // this tick's mouse-AI pass next tick has a chance to react.
+        if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetMouseId &&
+          !decided.jump
+        ) {
+          const targetMouseId = decided.targetMouseId
+          const target = mice[targetMouseId]
+          if (target && target.state !== 'held') {
+            const pounceDist = Math.hypot(
+              target.position.x - decided.position.x,
+              target.position.y - decided.position.y,
+            )
+            if (pounceDist < POUNCE_RANGE && pounceDist > POUNCE_MIN_RANGE) {
+              decided = {
+                ...decided,
+                action: 'pouncing',
+                jump: {
+                  from: decided.position,
+                  to: target.position,
+                  progressMs: 0,
+                  durationMs: POUNCE_BASE_MS + pounceDist * POUNCE_MS_PER_PX,
+                },
+              }
+              mice = {
+                ...mice,
+                [targetMouseId]: { ...target, state: 'fleeing', lastThreatenedAt: now },
+              }
+            }
+          }
+        }
+
         let finalPet = movePet(decided, deltaMs)
 
         // Arrived at a targeted item this tick — use it: apply its effect
@@ -601,6 +913,48 @@ export const usePetStore = create<PetStore>((set) => ({
             // the claim too, or nobody could ever target this item again.
             if (placedItem) sceneItems[placedItem.id] = { ...placedItem, claimedBy: null }
             finalPet = { ...finalPet, targetItemId: null }
+          }
+        }
+
+        // Landed a mouse pounce — same shape as the toy arrival above, but
+        // catching doesn't delete anything: the mouse goes into the cat's
+        // jaws (action 'holdingMouse'; see its store-side chuck timeout
+        // near the top of this loop) rather than being consumed outright.
+        if (wasApproaching && finalPet.action === 'idle' && finalPet.targetMouseId) {
+          const targetMouse = mice[finalPet.targetMouseId]
+          const missedIt =
+            !targetMouse ||
+            targetMouse.state === 'held' ||
+            Math.hypot(
+              targetMouse.position.x - finalPet.position.x,
+              targetMouse.position.y - finalPet.position.y,
+            ) > MOUSE_CATCH_DISTANCE
+          if (targetMouse && !missedIt) {
+            mice = {
+              ...mice,
+              [finalPet.targetMouseId]: {
+                ...targetMouse,
+                state: 'held',
+                heldBy: id,
+                destination: null,
+                jump: null,
+              },
+            }
+            finalPet = {
+              ...finalPet,
+              action: 'holdingMouse',
+              actionStartedAt: now,
+              needs: { ...finalPet.needs, happiness: clamp(finalPet.needs.happiness + 20) },
+            }
+            playSound('playing')
+          } else {
+            // Missed — it noticed and darted clear (already flagged
+            // 'fleeing' the instant the pounce was thrown, above). Release
+            // the claim too, or nobody could ever target this mouse again.
+            if (targetMouse) {
+              mice = { ...mice, [finalPet.targetMouseId]: { ...targetMouse, claimedBy: null } }
+            }
+            finalPet = { ...finalPet, targetMouseId: null }
           }
         }
 
@@ -657,6 +1011,40 @@ export const usePetStore = create<PetStore>((set) => ({
         }
       }
 
+      // Held mice ride along at their holder's mouth — same idea as a
+      // player dragging a pet, just driven by the holder's live position
+      // instead of a pointer. A fleeing mouse that's reached the hole
+      // escapes outright, its goal met.
+      for (const mouseId in mice) {
+        const mouse = mice[mouseId]
+        if (mouse.state === 'held' && mouse.heldBy) {
+          const holder = moved[mouse.heldBy]
+          if (holder) {
+            const dirX = holder.facing === 'left' ? -1 : 1
+            mice = {
+              ...mice,
+              [mouseId]: {
+                ...mouse,
+                position: {
+                  x: holder.position.x + dirX * MOUSE_MOUTH_OFFSET_X,
+                  y: holder.position.y + MOUSE_MOUTH_OFFSET_Y,
+                },
+              },
+            }
+          }
+        } else if (mouse.state === 'fleeing' && holePosition) {
+          const distToHole = Math.hypot(
+            mouse.position.x - holePosition.x,
+            mouse.position.y - holePosition.y,
+          )
+          if (distToHole < MOUSE_HOLE_DESPAWN_RANGE) {
+            const next = { ...mice }
+            delete next[mouseId]
+            mice = next
+          }
+        }
+      }
+
       // Tail physics run every frame for every non-suitcased pet, regardless
       // of whether that pet actually moved this tick — see tailPhysics.ts.
       // getTailAnchorLocal is facing-aware (mirrors the attach point itself
@@ -680,6 +1068,7 @@ export const usePetStore = create<PetStore>((set) => ({
       return {
         pets: moved,
         sceneItems,
+        mice,
         decayAccumulatorMs: accumulator,
         tailSegments,
         panelPosition,
@@ -917,6 +1306,7 @@ export const usePetStore = create<PetStore>((set) => ({
           (parentA.attentionSpan + parentB.attentionSpan) / 2 + (Math.random() * 60 - 30),
         ),
         targetPetId: null,
+        targetMouseId: null,
         socialClaimedBy: null,
         // Same light inheritance-with-variance pattern as attentionSpan.
         affection: clamp((parentA.affection + parentB.affection) / 2 + (Math.random() * 30 - 15)),
@@ -945,7 +1335,14 @@ export const usePetStore = create<PetStore>((set) => ({
   resetGame: () => {
     clearSavedGame()
     stopAllLoops()
-    set({ pets: freshStarterPets(), sceneItems: {}, tailSegments: {}, selectedPetId: null })
+    const hole = makeStarterMouseHole(get().sceneBounds)
+    set({
+      pets: freshStarterPets(),
+      sceneItems: { [hole.id]: hole },
+      mice: {},
+      tailSegments: {},
+      selectedPetId: null,
+    })
   },
 }))
 

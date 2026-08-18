@@ -26,6 +26,7 @@ function makePet(overrides: Partial<Pet> = {}): Pet {
     targetItemId: null,
     attentionSpan: 300,
     targetPetId: null,
+    targetMouseId: null,
     socialClaimedBy: null,
     affection: 60,
     ageMs: STARTER_AGE_MS,

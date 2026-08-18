@@ -71,4 +71,29 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     physics: { mass: 2.5, friction: 0.9, bounciness: 0 },
     consumable: false,
   },
+  {
+    id: 'mouse',
+    name: 'Mouse',
+    category: 'prey',
+    icon: '🐭',
+    // No need-effect at all — a cat never "consumes" this the normal way.
+    // Once it lands (see petStore.tick()'s prey-conversion step), the
+    // PlacedItem is deleted and replaced by an autonomous Mouse entity;
+    // everything past that point is stalk/pounce/catch, not item urgency.
+    effect: {},
+    physics: { mass: 0.3, friction: 0.85, bounciness: 0.2 },
+    consumable: false,
+  },
+  {
+    id: 'mousehole',
+    name: 'Mouse Hole',
+    category: 'hole',
+    icon: '🕳️',
+    // Furniture, not something a cat ever walks up to and uses — it's
+    // purely a destination a fleeing mouse heads for (see mouseBehavior.ts
+    // and petStore.tick()'s despawn check).
+    effect: {},
+    physics: { mass: 3, friction: 0.9, bounciness: 0 },
+    consumable: false,
+  },
 ]

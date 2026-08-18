@@ -62,6 +62,34 @@ export function ItemSprite({ placedItem }: ItemSpriteProps) {
 
   if (!definition) return null
 
+  // The mouse hole is furniture flush against the wall, not an object
+  // sitting on the floor — a drawn arch reads as "a hole cut into the
+  // wall" far better than a floating emoji badge would, and it never
+  // leaves the ground, so it skips the drop-shadow every other item gets.
+  if (definition.category === 'hole') {
+    return (
+      <div
+        className="mousehole-sprite"
+        style={{ left: placedItem.position.x, top: placedItem.position.y }}
+        title={definition.name}
+        onPointerDown={onPointerDown}
+      >
+        <svg width={26} height={18} viewBox="0 0 26 18" overflow="visible">
+          {/* Flat edge sits exactly at the bottom of the viewBox (y=18) so
+              the CSS translate(-100%) below lands it exactly on the floor
+              line — tall/elongated upward (ry=18) rather than a squat dome. */}
+          <path
+            d="M 1 18 A 12 18 0 0 1 25 18 Z"
+            fill="#1f1a16"
+            stroke="#5c3a1e"
+            strokeWidth={1}
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    )
+  }
+
   const shadowScale = Math.max(0.4, 1 - placedItem.height / 120)
 
   return (

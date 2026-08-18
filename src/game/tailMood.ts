@@ -15,6 +15,8 @@ export function getTailMood(pet: Pet): TailMood {
   // being carried doesn't flick its tail mid-air.
   if (pet.action === 'held') return 'neutral'
   if (pet.action === 'petting') return 'content'
+  // A proud catch — held high, like a happy cat showing off.
+  if (pet.action === 'holdingMouse') return 'content'
   if (pet.action === 'playing' && pet.targetPetId) return 'social'
   if (pet.action === 'playing') return 'agitated'
   // Zoomies and pouncing are pure play — the same lively swish as playing

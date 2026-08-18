@@ -12,6 +12,7 @@ function App() {
 
   const pets = usePetStore((state) => state.pets)
   const sceneItems = usePetStore((state) => state.sceneItems)
+  const mice = usePetStore((state) => state.mice)
   const selectedPetId = usePetStore((state) => state.selectedPetId)
   const selectedPet = selectedPetId ? pets[selectedPetId] : null
 
@@ -23,6 +24,7 @@ function App() {
       <Scene
         pets={roomPets}
         placedItems={Object.values(sceneItems)}
+        mice={Object.values(mice)}
         selectedPetId={selectedPetId}
       />
 

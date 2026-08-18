@@ -35,6 +35,12 @@ export type ActionState =
   | 'grooming' // self-licking or a paw-wash over the head/ear
   | 'stretching' // front-down, rump-up
   | 'kneading' // rhythmic paw presses, settled in place
+  // Caught a mouse and is holding it in its jaws — fully store-side (like
+  // 'held'/'petting', not run through the FSM at all) since both starting
+  // and ending it mutate the mouse too, not just this cat. Ends in a
+  // chuck: the mouse gets tossed and this cat usually (not always) goes
+  // right back to chasing it.
+  | 'holdingMouse'
 export type Facing = 'left' | 'right'
 
 // A ballistic hop from one floor point to another, advanced by movement.ts
@@ -79,6 +85,12 @@ export interface Pet {
   // Set while walking toward another cat to play, and again (pointing at
   // each other) for the duration of mutual 'playing' once they meet.
   targetPetId: string | null
+  // Set while stalking/pouncing/holding a mouse — cleared on a missed
+  // pounce, on losing interest after a chuck, or if the mouse escapes.
+  // Transient like targetItemId/targetPetId: reset to null on every load
+  // (see petStore.ts's sanitizeLoadedPet), never actually persisted
+  // meaningfully across a reload.
+  targetMouseId: string | null
   // Set on a cat that another cat is currently approaching for play — a
   // simple exclusivity lock (like an item's claimedBy) so a lonely cat
   // doesn't get beelined-at by two others at once. Also makes the claimed

@@ -238,6 +238,66 @@ item physics) without touching wall-clock action-animation timers
 (`actionStartedAt` comparisons stay real-time). Useful for both normal
 play and fast-forwarding through testing.
 
+### M20: the mouse — a new autonomous creature, not just another item
+
+A live mouse a cat can stalk, pounce on, carry, and chuck — the first entity in the
+room that isn't a cat or a physics-driven object.
+
+- **Spawn**: dragged out of the panel as a plain `'prey'`-category item (icon 🐭, same
+  generic drop-and-fall as any other item). The instant it's fully at rest —
+  `height === 0`, `verticalVelocity === 0`, ground speed under 5px/s, and not mid-drag
+  (`!held`) — `petStore.tick()` deletes the `PlacedItem` and replaces it with an
+  autonomous `Mouse` in a brand new store slice (`state.mice`, `src/types/mouse.ts`).
+  Mice are never persisted (excluded from `SavedState` entirely, like `tailSegments`) —
+  a reload always starts with none in the room.
+- **Mouse AI** (`src/game/mouseBehavior.ts` / `mouseMovement.ts`): three states —
+  `sneaking` (slow, cautious, picks wander points biased _away_ from the nearest cat via
+  a cheap reflect-through-self trick), `fleeing` (fast, beelines for a mouse hole if one
+  exists, otherwise just runs; calms back to sneaking after `MOUSE_CALM_MS` unbothered),
+  `held` (fully inert — the store drives its position, not its own AI). No needs, no
+  gaits — much simpler than a cat's FSM, same `(entity, context) → entity` pure shape.
+- **Detection has real stakes**: a trotting cat spooks it from `MOUSE_DETECT_RADIUS`
+  (150px); a _stalking_ cat only from `MOUSE_STALK_DETECT_RADIUS` (65px) — tighter than
+  `petStore.ts`'s `STALK_RANGE` (200, shared with toy-stalking), so a cat that starts
+  stalking before crossing the loud radius gets a genuine shot at an undetected approach
+  all the way into pounce range. **Caught and fixed during testing**: the first version
+  had `MOUSE_DETECT_RADIUS` equal to `STALK_RANGE`, so detection and the stalk-transition
+  fired in the same instant — never a real sneak, just a coin flip. Verified the fix with
+  deterministic `tick()` stepping: logged a full approach where the mouse stayed
+  `'sneaking'` right up to the pounce trigger.
+- **Stalk → pounce → catch, reusing the toy mechanic**: `STALK_RANGE`/`POUNCE_RANGE`
+  apply to `Pet.targetMouseId` exactly like `targetItemId`, no new thresholds needed. A
+  landed pounce checks distance to the mouse's _current_ position (it kept fleeing during
+  the leap) against a tighter `MOUSE_CATCH_DISTANCE` (34px, vs. a toy's 48) — a mouse is a
+  much smaller target. The leap itself is what a still-sneaking mouse finally notices:
+  the pounce-trigger flags it `'fleeing'` the instant the jump is thrown, before impact.
+- **Held → chuck → usually re-chases**: a catch moves the cat into `'holdingMouse'` —
+  store-side only, never touches the FSM, same reasoning as `'held'`/`'petting'` (starting
+  and ending it both mutate the _mouse_ too). After `HOLD_MOUSE_MS` it chucks the mouse
+  (a ballistic hop away, reusing `JumpState`) and rolls `MOUSE_RECHASE_CHANCE` (75%) on
+  whether to immediately give chase again. A real test run showed three
+  catch→chuck→re-catch cycles before the cat finally lost interest.
+- **The mouse hole**: also just a normal placeable item (`'hole'` category, non-
+  consumable, zero attention-urgency), but `resetGame()` pre-places one against the wall
+  by default so there's always somewhere to escape to. A `'fleeing'` mouse within
+  `MOUSE_HOLE_DESPAWN_RANGE` (20px) despawns outright — goal met. Rendered as a hand-drawn
+  dark arch (`ItemSprite.tsx` special-cases `category === 'hole'`), not the generic emoji
+  badge — tuned by eye against the actual wall-gradient CSS stops (`App.css`'s `.scene`
+  background) rather than guessed pixel offsets, and needed `display: block` on the
+  `<svg>` to kill an inline-element font-baseline gap that was throwing the
+  flush-to-the-floor alignment off by a few px.
+- **Visuals** (`MouseSprite.tsx`): deliberately minimal per the owner's spec — one grey
+  oval body, a thin curved tail, two small circle feet (no joints, no gait — just a
+  squash/wiggle scurry), a pink button nose, dot eyes.
+- New claim field (`Mouse.claimedBy`, mirroring an item's) prevents two cats beelining
+  for the same mouse — caught a real bug in an early draft where it was tracked in a
+  tick-local `Set` but never actually written back onto the mouse, so exclusivity quietly
+  didn't work across ticks.
+- Verified end-to-end with deterministic `tick()` stepping (paused `timeScale`, drove
+  `tick()` directly) rather than real-time waits — this session's testing kept racing
+  real elapsed time between tool calls otherwise. New tests: `mouseBehavior.test.ts`,
+  `mouseMovement.test.ts`.
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

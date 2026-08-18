@@ -341,6 +341,30 @@
   z-index: 2;
 }
 
+.mouse-sprite {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mousehole-sprite {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  z-index: 1;
+}
+
+.mousehole-sprite svg {
+  /* SVG is inline by default, which leaves a few px of font-baseline gap
+     below it inside the div — that gap silently added to this element's
+     height, throwing off the translateY(-100%) math above by exactly that
+     much. display:block removes it so the div's height is the svg's
+     height, no more, no less. */
+  display: block;
+}
+
 .item-shadow {
   position: absolute;
   width: 32px;

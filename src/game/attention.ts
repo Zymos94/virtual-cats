@@ -5,13 +5,14 @@ const WANT_THRESHOLD = 60
 const SOCIAL_HAPPINESS_THRESHOLD = 70
 
 export interface AttentionTarget {
-  kind: 'item' | 'cat'
+  kind: 'item' | 'cat' | 'mouse'
   id: string
   position: { x: number; y: number }
 }
 
 // Which need a given category of item addresses — grooming and the
-// litter box both land on hygiene, everything else gets its own.
+// litter box both land on hygiene, everything else gets its own. 'prey'
+// and 'hole' never reach here — see itemUrgency below.
 function needKeyForCategory(category: ItemCategory): keyof Needs {
   switch (category) {
     case 'food':
@@ -28,10 +29,22 @@ function needKeyForCategory(category: ItemCategory): keyof Needs {
 }
 
 // How much a pet currently wants a given item — 0 if the relevant need is
-// already satisfied, otherwise larger the more urgent it is.
+// already satisfied, otherwise larger the more urgent it is. 'prey' (the
+// mouse, mid-drop before it converts to an autonomous Mouse — see
+// petStore.tick()) and 'hole' (furniture a cat never walks up to and
+// uses) are excluded outright rather than falling into a needKeyForCategory
+// default.
 export function itemUrgency(pet: Pet, definition: ItemDefinition): number {
+  if (definition.category === 'prey' || definition.category === 'hole') return 0
   const value = pet.needs[needKeyForCategory(definition.category)]
   return value >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - value
+}
+
+// How much a pet wants to chase a mouse it's noticed — the same play
+// drive a toy satisfies, since batting around a live mouse scratches the
+// same itch as a ball.
+export function mouseUrgency(pet: Pet): number {
+  return pet.needs.happiness >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - pet.needs.happiness
 }
 
 // How much a pet currently wants company. Only the seeking pet's own

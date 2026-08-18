@@ -47,7 +47,7 @@ function targetSpeedFor(pet: Pet, distanceLeft: number): number {
       ? RUN_SPEED
       : pet.action === 'stalking'
         ? STALK_SPEED
-        : pet.targetItemId || pet.targetPetId
+        : pet.targetItemId || pet.targetPetId || pet.targetMouseId
           ? TROT_SPEED
           : AMBLE_SPEED
   const scaled = base * getLifeStageSpeedMultiplier(getLifeStage(pet.ageMs))

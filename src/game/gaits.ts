@@ -144,7 +144,7 @@ export function selectGait(pet: Pet): GaitDef {
   if (pet.targetItemId && (pet.needs.hunger < URGENT_HUNGER || pet.needs.energy < URGENT_ENERGY)) {
     return GALLOP
   }
-  if (pet.targetItemId || pet.targetPetId) return TROT
+  if (pet.targetItemId || pet.targetPetId || pet.targetMouseId) return TROT
   if (pet.action === 'walking' && pet.needs.happiness > STRUT_HAPPINESS) return STRUT
   return WALK
 }

@@ -65,6 +65,7 @@ const KNEAD_EXTRA_MS = 3000
 // this pet currently wants most.
 function walkToward(pet: Pet, target: AttentionTarget, now: number): Pet {
   const isCat = target.kind === 'cat'
+  const isMouse = target.kind === 'mouse'
   const destination = isCat
     ? { x: target.position.x + SOCIAL_APPROACH_OFFSET, y: target.position.y }
     : target.position
@@ -72,8 +73,9 @@ function walkToward(pet: Pet, target: AttentionTarget, now: number): Pet {
     ...pet,
     action: 'walking',
     destination,
-    targetItemId: isCat ? null : target.id,
+    targetItemId: !isCat && !isMouse ? target.id : null,
     targetPetId: isCat ? target.id : null,
+    targetMouseId: isMouse ? target.id : null,
     actionStartedAt: now,
   }
 }
@@ -134,6 +136,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
           actionDurationMs: ZOOMIES_MIN_MS + Math.random() * ZOOMIES_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
+          targetMouseId: null,
           actionStartedAt: ctx.now,
         }
       }
@@ -146,6 +149,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
           actionDurationMs: SIT_MIN_MS + Math.random() * SIT_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
+          targetMouseId: null,
           actionStartedAt: ctx.now,
         }
       }
@@ -158,6 +162,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
           actionDurationMs: GROOM_MIN_MS + Math.random() * GROOM_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
+          targetMouseId: null,
           actionStartedAt: ctx.now,
         }
       }
@@ -170,6 +175,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
           actionDurationMs: STRETCH_MIN_MS + Math.random() * STRETCH_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
+          targetMouseId: null,
           actionStartedAt: ctx.now,
         }
       }
@@ -182,6 +188,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
           actionDurationMs: KNEAD_MIN_MS + Math.random() * KNEAD_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
+          targetMouseId: null,
           actionStartedAt: ctx.now,
         }
       }
@@ -192,6 +199,7 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
         destination: randomPointInBounds(ctx.sceneBounds, 60, topMargin),
         targetItemId: null,
         targetPetId: null,
+        targetMouseId: null,
         actionStartedAt: ctx.now,
       }
     }
@@ -324,6 +332,12 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
     // petStore.tick(), not here, since it's a continuous per-frame effect
     // rather than a state transition.
     case 'petting':
+      return pet
+    // Holding a caught mouse — AI fully suspended, same reasoning as
+    // 'held'/'petting': starting and ending this both mutate the mouse
+    // too, so petStore.tick() handles the whole thing itself (including
+    // the chuck-timeout transition out) rather than routing through here.
+    case 'holdingMouse':
       return pet
     default:
       return pet
