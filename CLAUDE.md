@@ -146,6 +146,10 @@ than duplicating the math.
   over the pose's own elapsed time rather than snapping, matching how long the body's own eased
   crossfade takes to fade in. A mismatch here is the single most common cause of the tail visibly
   disconnecting from the body — see the M22 postmortem in DEVLOG.md before touching this again.
+  `stepChain` also carries a small straightening bias (`STRAIGHTEN`, M23) — with none, sustained
+  small anchor sway (the 'content' mood's slow sine sway runs continuously for as long as a cat
+  stays happy) can wind the chain into a permanent tight coil over hundreds of cycles; this only
+  shows up after minutes of real play, not a short synthetic test — see the M23 postmortem.
 - `src/game/catPose.ts` — procedural leg IK + pose blend weights (sit/lie/hop).
 - `src/game/gaits.ts` — gait timing/footfall engine (walk/trot/slink/gallop/strut) + body/head/tail
   posture per gait.

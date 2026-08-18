@@ -566,6 +566,51 @@ that investigation.
   hungry-meow/hiss/growl triggers all live store-side in `petStore.ts`, which has no
   channel back to a specific render-only mouth shape.
 
+### M23: the tail was still winding itself up, and a face that turns with the eyes (2026-08-18)
+
+The M22 tail fixes shipped, but the user caught it happening again live — a screenshot of
+the deployed app showed one cat with a normal-length tail, one with a short stubby clump
+glued to its body, and one with no visible tail at all, mid-ordinary, undirected
+gameplay. M22's fixes were real (and stayed fixed — the earlier bugs didn't come back),
+but they were all found and verified via short, targeted single-transition tests; this
+one only shows up after minutes of continuous real play, which nothing in M22's testing
+actually simulated.
+
+- **The chain can wind itself into a coil over sustained sway.** Reproduced by running a
+  full free-running (no forced states) 3-cat simulation for ~1000 simulated seconds:
+  Mittens' tail settled to a tip-to-base reach of ~11px against a ~30px fully-extended
+  reach — visibly a tight, stubby coil, not misplaced or invisible, just wound up. Root
+  cause: `stepChain` (`tailPhysics.ts`) has zero resistance to bending — the ease step
+  pulls a segment toward its target, the constraint step snaps it back to exactly
+  `linkLength` away, but _nothing_ biases that direction toward continuing straight.
+  `tailMood.ts`'s `'content'` mood applies a slow, continuous sine sway to the anchor for
+  as long as a cat stays happy — potentially hundreds of cycles over one real session —
+  and with nothing pulling the chain back toward straight, each reversal can leave it a
+  little more curled than the last. The coil doesn't show up as "broken" while the cat
+  keeps swaying (it still trails plausibly); it only reads as a stubby, glued-on clump
+  once the cat holds _truly_ still (mood `'neutral'`, e.g. sitting) and the coiled shape
+  simply freezes there with nothing left to unwind it. Fixed by adding a small
+  straightening bias to `stepChain`: each link's direction blends 18% toward the
+  _previous_ link's direction (anchor→segment0, then segment0→segment1, and so on) before
+  the distance constraint is reapplied — a standard technique for chain/rope sims that
+  have no other bending stiffness. Verified two ways: (1) the exact reproduction scenario,
+  run four more times from a fresh reset, stayed in the 25.7–30px range every time (was
+  ~11px); (2) a new `tailPhysics.test.ts` case runs 60,000 ticks (1000 simulated seconds)
+  of the real `'content'`-mood sway formula directly through `stepChain` and asserts the
+  reach stays above 20px, plus a second case confirming every individual link is still
+  held at exactly `linkLength` afterward (the bias only steers direction, never touches
+  distance). Also re-verified visually that flicks and idle sway still read as lively, not
+  stiffened, with the bias in place — 18% is a nudge, not a lock.
+- **The face was "pushed into the corner," and whiskers only showed up on one side.**
+  `NOSE_X` (70) sat only 4px from the head polygon's own front corner (74) — cramped.
+  Pulled back to 66. Also gave the nose/mouth/whisker group a fraction (0.5×) of the same
+  gaze-driven `eased.shiftX`/`shiftY` the eyes already use, so the whole muzzle reads as
+  turning together with the eyes toward whatever they're tracking instead of the eyes
+  doing all the directional work alone. Added a second, smaller whisker fan near the far
+  eye, peeking up and back over the muzzle — the same "draw it twice" stylization
+  `EYE_XS` already uses for both eyes despite the true side-profile view, now applied
+  consistently to whiskers too.
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

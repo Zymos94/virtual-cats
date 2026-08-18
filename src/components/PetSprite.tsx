@@ -28,9 +28,9 @@ const SPOT_POSITIONS = [
 const EYE_XS = [55, 63]
 const EYE_Y = 23
 // Nose/mouth/whiskers all anchor off this one point — just ahead of and
-// below the eyes, on the muzzle before the head polygon's front corner
-// (74,34).
-const NOSE_X = 70
+// below the eyes, on the muzzle. Pulled back a bit from the head polygon's
+// front corner (74,34) so it doesn't read as jammed into the corner.
+const NOSE_X = 66
 const NOSE_Y = 29
 // How long the mouth flashes open in a little "O" after a click-select
 // meow — the only vocalization moment PetSprite.tsx has direct visibility
@@ -342,6 +342,12 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const mouthShape: 'Y' | 'O' | 'P' = pet.action === 'eating' || meowing ? 'O' : licking ? 'P' : 'Y'
   // Stable per-cat, not re-rolled every render — same trick as groomVariant.
   const noseColor = hash % 3 === 0 ? '#2b2620' : '#e79aa8'
+  // Nose/mouth/whiskers ride along with the same gaze shift the eyes use
+  // (eased.shiftX/Y) — a smaller fraction of it, so the whole muzzle reads
+  // as turning together with the eyes toward whatever they're tracking,
+  // rather than the eyes alone doing all the directional work.
+  const noseCx = NOSE_X + eased.shiftX * 0.5
+  const noseCy = NOSE_Y + eased.shiftY * 0.5
 
   // A flank-lick dips the head down toward the cat's own side in a slow
   // rhythmic bob; a paw-wash follows the raised paw with a smaller,
@@ -661,18 +667,25 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               )
             })}
 
-            {/* Whiskers — a simple 3-line fan from the muzzle, same side as
-                the visible cheek in this profile view. Purely decorative,
-                no per-cat/state variation. */}
+            {/* Whiskers — two fans, same idea as EYE_XS drawing both eyes
+                even though this is a profile view: a near-cheek fan off the
+                muzzle (the main one) and a smaller far-cheek fan peeking out
+                above it, near the far eye, the way a real second whisker pad
+                would show past the bridge of the nose. Purely decorative,
+                no per-cat/state variation beyond the shared gaze shift. */}
             <g stroke={stroke} strokeWidth={0.6} strokeLinecap="round" opacity={0.8}>
-              <line x1={NOSE_X - 3} y1={NOSE_Y - 3} x2={NOSE_X + 8} y2={NOSE_Y - 7} />
-              <line x1={NOSE_X - 2} y1={NOSE_Y} x2={NOSE_X + 10} y2={NOSE_Y} />
-              <line x1={NOSE_X - 3} y1={NOSE_Y + 3} x2={NOSE_X + 8} y2={NOSE_Y + 7} />
+              <line x1={noseCx - 3} y1={noseCy - 3} x2={noseCx + 8} y2={noseCy - 7} />
+              <line x1={noseCx - 2} y1={noseCy} x2={noseCx + 10} y2={noseCy} />
+              <line x1={noseCx - 3} y1={noseCy + 3} x2={noseCx + 8} y2={noseCy + 7} />
+            </g>
+            <g stroke={stroke} strokeWidth={0.5} strokeLinecap="round" opacity={0.6}>
+              <line x1={noseCx - 8} y1={noseCy - 6} x2={noseCx - 1} y2={noseCy - 10} />
+              <line x1={noseCx - 8} y1={noseCy - 4} x2={noseCx + 2} y2={noseCy - 8} />
             </g>
 
             <circle
-              cx={NOSE_X}
-              cy={NOSE_Y}
+              cx={noseCx}
+              cy={noseCy}
               r={1.3}
               fill={noseColor}
               stroke={stroke}
@@ -681,8 +694,8 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
             {mouthShape === 'O' && (
               <ellipse
-                cx={NOSE_X - 1}
-                cy={NOSE_Y + 3.2}
+                cx={noseCx - 1}
+                cy={noseCy + 3.2}
                 rx={1.6}
                 ry={2}
                 fill="#6b3f3f"
@@ -692,10 +705,10 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
             )}
             {mouthShape === 'P' && (
               <g stroke={stroke} strokeWidth={0.8} strokeLinecap="round" fill="none">
-                <line x1={NOSE_X - 1} y1={NOSE_Y + 1.5} x2={NOSE_X - 1} y2={NOSE_Y + 6} />
+                <line x1={noseCx - 1} y1={noseCy + 1.5} x2={noseCx - 1} y2={noseCy + 6} />
                 <circle
-                  cx={NOSE_X + 0.6}
-                  cy={NOSE_Y + 2.2}
+                  cx={noseCx + 0.6}
+                  cy={noseCy + 2.2}
                   r={1.1}
                   fill="#e79aa8"
                   stroke={stroke}
@@ -705,10 +718,10 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
             {mouthShape === 'Y' && (
               <g stroke={stroke} strokeWidth={0.7} strokeLinecap="round" fill="none">
                 <path
-                  d={`M ${NOSE_X - 1} ${NOSE_Y + 2} Q ${NOSE_X - 4} ${NOSE_Y + 4.5} ${NOSE_X - 6} ${NOSE_Y + 3.5}`}
+                  d={`M ${noseCx - 1} ${noseCy + 2} Q ${noseCx - 4} ${noseCy + 4.5} ${noseCx - 6} ${noseCy + 3.5}`}
                 />
                 <path
-                  d={`M ${NOSE_X - 1} ${NOSE_Y + 2} Q ${NOSE_X + 2} ${NOSE_Y + 4.5} ${NOSE_X + 4} ${NOSE_Y + 3.5}`}
+                  d={`M ${noseCx - 1} ${noseCy + 2} Q ${noseCx + 2} ${noseCy + 4.5} ${noseCx + 4} ${noseCy + 3.5}`}
                 />
               </g>
             )}
