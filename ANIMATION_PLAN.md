@@ -10,6 +10,22 @@ repo is at commit `8ab13ed` (M19) as of writing.
 **Sequencing (owner-confirmed):** execute `ARCHITECTURE.md` phases 1–8 first. This plan's phases
 assume the save-migration system (its Phase 7) and the store slice split (its Phase 8) have landed.
 New genetics fields added here go through real migrations, not ad-hoc `?? default` patching.
+**Phase A1 jumped the queue** (owner request, 2026-08-18) — it only touches pure render/game files
+(`gaits.ts`, `catPose.ts`, `movement.ts` was untouched, `PetSprite.tsx`, `tailMood.ts`), no store
+fields or save schema, so it was safe to do ahead of Phases 7–8. **A4 (genetics wiring) still
+waits** for those phases to land, as planned.
+
+## Status
+
+- ✅ **Phase A1 — done** (commit `eb6977f`). Gait engine (`gaits.ts`) replaces the old sinusoid leg
+  cycle; the moonwalk bug is fixed (verified by a planted-foot-never-slides-forward test, plus a
+  live browser check — see DEVLOG-style detail in the commit message). Walk and trot both wired.
+  **Also added, ahead of schedule**: the held/scruff-dangle pose (owner request, not originally
+  scoped to A1) — legs go loose and swing on drag-velocity lag, body leans like a pendulum from a
+  neck pivot, tail drops and hangs limp. Lives in the same pose layer (`catPose.ts`'s `hold` blend)
+  so it composes cleanly with everything A2+ adds.
+- ⬜ A2 (slink/gallop/strut + stalking state) — not started.
+- ⬜ A3–A7 — not started.
 
 ## Decisions made (owner-confirmed, do not re-litigate)
 
