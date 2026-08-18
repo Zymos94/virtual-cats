@@ -23,6 +23,17 @@
   margin: 0;
 }
 
+.save-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-controls {
+  display: flex;
+  gap: 4px;
+}
+
 .save-controls button {
   padding: 8px 14px;
   font-size: 13px;
@@ -35,6 +46,12 @@
 
 .save-controls button:hover {
   border-color: var(--accent-border);
+}
+
+.speed-controls button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-border);
+  color: var(--bg);
 }
 
 .scene {
@@ -85,34 +102,6 @@
 
 .pet-sprite.petting svg {
   animation: petting-glow 0.8s ease-in-out infinite;
-}
-
-@keyframes tail-sway {
-  0%,
-  100% {
-    transform: rotate(-8deg);
-  }
-  50% {
-    transform: rotate(8deg);
-  }
-}
-
-.tail-idle-sway {
-  animation: tail-sway 2.6s ease-in-out infinite;
-}
-
-@keyframes tail-flick {
-  0%,
-  100% {
-    transform: rotate(-16deg);
-  }
-  50% {
-    transform: rotate(16deg);
-  }
-}
-
-.tail-flick {
-  animation: tail-flick 0.45s ease-in-out infinite;
 }
 
 .bottom-dock {

@@ -34,7 +34,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     category: 'toy',
     icon: '🪶',
     effect: { happiness: 20, energy: -5 },
-    physics: { mass: 0.7, friction: 0.45, bounciness: 0.1 },
+    physics: { mass: 0.7, friction: 0.75, bounciness: 0.1 },
     consumable: true,
   },
   {
@@ -43,7 +43,7 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     category: 'grooming',
     icon: '🧹',
     effect: { hygiene: 40 },
-    physics: { mass: 1.2, friction: 0.25, bounciness: 0 },
+    physics: { mass: 1.2, friction: 0.8, bounciness: 0 },
     consumable: true,
   },
   {

@@ -8,6 +8,21 @@ const MARGIN = 16 // keeps the item's icon fully inside the room's side/front ed
 // Belt-and-suspenders cap alongside useGameLoop's deltaMs clamp — no throw
 // in this room should ever need to arc higher than this.
 const MAX_HEIGHT = 400
+// How far behind the wall's base line an airborne item may currently sit,
+// per pixel of its current height — at MAX_HEIGHT that's a peek of ~140px.
+const WALL_PEEK_RATIO = 0.35
+
+// Reflects a position that overshot a boundary back on the correct side,
+// scaled by bounciness — a real bounce, not a teleport. At bounciness 0
+// this reduces to exactly clamping to the edge (the overshoot term
+// vanishes); at higher bounciness a fast-moving item that overshot
+// further rebounds further, instead of always snapping to the same point
+// regardless of how hard it hit. A plain clamp-in-place reads as a sudden
+// snap/jump right at the edge for anything moving fast enough to overshoot
+// by a visible amount — most noticeably a ball thrown hard toward a wall.
+function reflect(edge: number, overshootPastEdge: number, bounciness: number): number {
+  return edge + overshootPastEdge * bounciness
+}
 
 // Same floor-plane bound pets wander within — an item resting or rolling
 // on the ground never sits "inside" the wall band behind it.
@@ -82,24 +97,32 @@ export function stepItemPhysics(
 
     const floor = floorBounds(bounds)
     if (x < floor.left) {
-      x = floor.left
+      x = reflect(floor.left, floor.left - x, profile.bounciness)
       vx = -vx * profile.bounciness
     } else if (x > floor.right) {
-      x = floor.right
+      x = reflect(floor.right, floor.right - x, profile.bounciness)
       vx = -vx * profile.bounciness
     }
 
-    // The horizon (back wall boundary) only constrains the item once it's
-    // actually resting on the floor — while airborne it can freely sail
-    // into that space above/behind the horizon line, same as a ball
-    // thrown up toward the back of a real room. Gravity always brings it
-    // down eventually; once it lands, it's pulled back onto the floor
-    // plane rather than resting "inside" the wall.
-    if (height <= 0 && y < floor.top) {
-      y = floor.top
-      vy = 0
+    // The horizon (back wall boundary) relaxes for an airborne item — it
+    // can sail up into that space, same as a ball thrown toward the back
+    // of a real room — but only as far behind it as its current height
+    // allows, an allowance that shrinks back to 0 as it descends. Ground
+    // Y-velocity itself isn't touched by gravity or by this, so without
+    // that shrinking allowance a hard throw could carry it arbitrarily far
+    // into wall-space for the whole time it's in the air, however long
+    // that is, leaving one huge, jarring correction to make all at once
+    // right at the moment it finally lands. Easing the allowance shut
+    // continuously through the descent instead means it's always within a
+    // small, current-frame-sized correction of the floor plane, and lands
+    // already on it with nothing left to snap.
+    const wallPeek = Math.max(0, height * WALL_PEEK_RATIO)
+    const effectiveTop = Math.max(0, floor.top - wallPeek)
+    if (y < effectiveTop) {
+      y = effectiveTop
+      if (height <= 0) vy = -vy * profile.bounciness
     } else if (y > floor.bottom) {
-      y = floor.bottom
+      y = reflect(floor.bottom, floor.bottom - y, profile.bounciness)
       vy = -vy * profile.bounciness
     }
 

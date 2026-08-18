@@ -11,8 +11,8 @@ import { attentionScore, itemUrgency, socialUrgency, type AttentionTarget } from
 import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
-import { initialSegments, mirrorSegments, stepChain, type Point } from '../game/tailPhysics'
-import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
+import { initialSegments, stepChain, type Point } from '../game/tailPhysics'
+import { TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 import { STARTER_AGE_MS } from '../game/lifeStage'
 import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
 
@@ -26,7 +26,14 @@ interface PetStore {
   sceneBounds: { width: number; height: number }
   decayAccumulatorMs: number
   selectedPetId: string | null
+  // Multiplies every deltaMs-driven effect (needs decay, aging, movement,
+  // item physics) — 1 is normal cozy pace, higher fast-forwards the whole
+  // simulation uniformly. Doesn't affect wall-clock action timers (how
+  // long an eating/sleeping animation lasts), just how fast time itself
+  // passes for the room.
+  timeScale: number
   tick: (now: number, deltaMs: number) => void
+  setTimeScale: (value: number) => void
   setSceneBounds: (bounds: { width: number; height: number }) => void
   selectPet: (petId: string | null) => void
   startDragPet: (petId: string) => void
@@ -46,7 +53,9 @@ interface PetStore {
 }
 
 const DECAY_INTERVAL_MS = 1000
-const DECAY_PER_SECOND: Needs = { hunger: -0.5, energy: -0.3, hygiene: -0.2, happiness: -0.2 }
+// Cozy, not hectic — a cat left alone should take the better part of an
+// hour to actually need something, not a couple of minutes.
+const DECAY_PER_SECOND: Needs = { hunger: -0.05, energy: -0.03, hygiene: -0.02, happiness: -0.02 }
 
 const PLACE_DROP_HEIGHT = 24
 const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
@@ -227,15 +236,23 @@ export const usePetStore = create<PetStore>((set) => ({
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
   selectedPetId: null,
+  timeScale: 1,
 
+  setTimeScale: (value) => set({ timeScale: value }),
   setSceneBounds: (bounds) => set({ sceneBounds: bounds }),
 
   // Called every animation frame by the game loop. Needs decay happens in
   // fixed 1-second steps so its rate stays consistent regardless of frame
   // rate; behavior (FSM) and movement run every frame using the real delta,
   // independently for every pet in the record.
-  tick: (now, deltaMs) =>
+  tick: (now, rawDeltaMs) =>
     set((state) => {
+      // Every deltaMs-driven effect below (decay, aging, movement, item
+      // physics) runs on this scaled value, not the real frame delta —
+      // that's the whole simulation speeding up or slowing down uniformly
+      // under setTimeScale, while wall-clock action timers (actionStartedAt
+      // comparisons against `now`) stay real-time and unaffected.
+      const deltaMs = rawDeltaMs * state.timeScale
       let accumulator = state.decayAccumulatorMs + deltaMs
       let pets = state.pets
 
@@ -433,18 +450,20 @@ export const usePetStore = create<PetStore>((set) => ({
 
       // Tail physics run every frame for every non-suitcased pet, regardless
       // of whether that pet actually moved this tick — see tailPhysics.ts.
+      // getTailAnchorLocal is facing-aware (mirrors the attach point itself
+      // for a left-facing cat), so the anchor a facing-flipped cat's chain
+      // follows jumps straight to the correct side the same tick facing
+      // changes — the chain's own easing then carries the segments there
+      // smoothly, the same as it handles any other anchor movement, with
+      // no separate one-shot correction needed at the flip instant.
       const tailSegments: Record<string, Point[]> = {}
       for (const id in moved) {
         if (moved[id].inSuitcase) continue
         const pet = moved[id]
-        const previousPet = state.pets[id]
-        const anchorLocal = getTailAnchorLocal(pet)
+        const anchorLocal = getTailAnchorLocal(pet, now)
         const anchorWorld = { x: pet.position.x + anchorLocal.x, y: pet.position.y + anchorLocal.y }
 
-        let segments = state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
-        if (previousPet && previousPet.facing !== pet.facing) {
-          segments = mirrorSegments(segments, pet.position.x, SVG_WIDTH)
-        }
+        const segments = state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
         tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
       }
 

@@ -42,13 +42,3 @@ export function stepChain(prevSegments: Point[], anchor: Point, linkLength: numb
 export function initialSegments(anchor: Point, segmentCount: number, linkLength: number): Point[] {
   return Array.from({ length: segmentCount }, (_, i) => ({ x: anchor.x, y: anchor.y + i * linkLength }))
 }
-
-// The sprite's whole SVG mirrors horizontally when facing flips, but these
-// segment positions are plain scene coordinates that know nothing about
-// that mirror. Without this, a flip leaves old segments on what is now
-// visually the wrong side, sweeping back through the body over several
-// frames while easing to the new anchor. Called once, the instant facing
-// changes, so the chain's visual shape stays continuous through the flip.
-export function mirrorSegments(segments: Point[], petPositionX: number, spriteWidth: number): Point[] {
-  return segments.map((seg) => ({ x: 2 * petPositionX + spriteWidth - seg.x, y: seg.y }))
-}

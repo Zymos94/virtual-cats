@@ -3,7 +3,6 @@ import type { Pet } from '../types/pet'
 import { usePetStore } from '../store/petStore'
 import { deriveAppearance } from '../game/appearance'
 import { mousePosition } from '../game/mousePosition'
-import { getTailAnchorLocal, getTailMood } from '../game/tailMood'
 import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
 import { getLifeStage, getLifeStageScale } from '../game/lifeStage'
 import { playSound } from '../game/sound'
@@ -42,14 +41,23 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function PetSprite({ pet, selected }: PetSpriteProps) {
+  // tailWorld is simulated in plain, facing-agnostic world coordinates
+  // (see petStore.tick), so tailLocal (world minus the sprite's own
+  // position) is the TRUE offset we want visible on screen. But these
+  // circles are drawn inside the same <svg> whose CSS transform mirrors
+  // the body/head/legs for facing left — those are fixed shapes authored
+  // assuming right-facing, so that mirror is exactly what repositions
+  // them correctly. The tail isn't authored that way, so left as-is it
+  // would get an unwanted second mirror on top of an already-correct
+  // value. Pre-mirroring it here cancels that out, the same trick as
+  // getTailAnchorLocal uses for the anchor itself.
   const tailWorld = usePetStore((state) => state.tailSegments[pet.id]) ?? []
-  const tailLocal = tailWorld.map((p) => ({ x: p.x - pet.position.x, y: p.y - pet.position.y }))
-  const tailAnchorLocal = getTailAnchorLocal(pet)
-  const tailMood = getTailMood(pet)
+  const tailLocal = tailWorld.map((p) => ({
+    x: pet.facing === 'left' ? SVG_WIDTH - (p.x - pet.position.x) : p.x - pet.position.x,
+    y: p.y - pet.position.y,
+  }))
 
   const isWalking = pet.action === 'walking'
-  const isIdleLike = !isWalking
-  const tailClassName = tailMood === 'agitated' ? 'tail-flick' : isIdleLike ? 'tail-idle-sway' : undefined
   const { body, stroke, eye, scale: geneticScale, spotted } = deriveAppearance(pet.genetics)
   const scale = geneticScale * getLifeStageScale(getLifeStage(pet.ageMs))
   const xScale = pet.facing === 'left' ? -scale : scale
@@ -142,10 +150,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
         style={{ transform: `scale(${xScale}, ${scale})`, transformOrigin: '50% 50%', overflow: 'visible' }}
       >
-        <g
-          className={tailClassName}
-          style={{ transformOrigin: `${tailAnchorLocal.x}px ${tailAnchorLocal.y}px` }}
-        >
+        <g>
           {tailLocal.map((seg, i) => (
             <circle key={i} cx={seg.x} cy={seg.y} r={4 - i * 0.4} fill={body} stroke={stroke} strokeWidth={1} />
           ))}
