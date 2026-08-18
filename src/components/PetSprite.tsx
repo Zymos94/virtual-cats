@@ -121,7 +121,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
       if (petting) {
         usePetStore.getState().endPetting(pet.id)
       } else if (moved) {
-        const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.suitcase-panel')
+        const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.game-panel')
         if (droppedOnSuitcase) {
           usePetStore.getState().putPetInSuitcase(pet.id)
         } else {

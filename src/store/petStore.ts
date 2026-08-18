@@ -32,8 +32,20 @@ interface PetStore {
   // long an eating/sleeping animation lasts), just how fast time itself
   // passes for the room.
   timeScale: number
+  // The stats/cats/items/breeding panel behaves like a physical object the
+  // player can shove around — very high friction (see PANEL_FRICTION), so
+  // it's really just "move with the mouse" with a token bit of slide on
+  // release rather than a real throw. Runs on real time regardless of
+  // timeScale, same reasoning as action-animation timers: it's a UI
+  // interaction, not part of the room simulation being fast-forwarded.
+  panelPosition: { x: number; y: number }
+  panelVelocity: { x: number; y: number }
+  panelHeld: boolean
   tick: (now: number, deltaMs: number) => void
   setTimeScale: (value: number) => void
+  startDragPanel: () => void
+  dragPanelTo: (x: number, y: number) => void
+  endDragPanel: (velocity: { x: number; y: number }) => void
   setSceneBounds: (bounds: { width: number; height: number }) => void
   selectPet: (petId: string | null) => void
   startDragPet: (petId: string) => void
@@ -73,6 +85,26 @@ const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is fre
 // 5x faster than an aloof one (affection 0).
 const PETTING_BASE_RATE = 2
 const PETTING_AFFECTION_BONUS = 8
+
+// Very high on purpose — the panel should feel grabby, not slippery. A
+// released panel travels only a token distance before stopping, unlike a
+// thrown item.
+const PANEL_FRICTION = 0.97
+const PANEL_STOP_THRESHOLD_PX_PER_SEC = 20
+// Keeps at least the panel's own top-left corner (where its drag handle
+// lives) reachable on screen, without needing to know the panel's actual
+// rendered size (which varies by which tab is open).
+const PANEL_EDGE_MARGIN = 40
+
+function clampPanelPosition(
+  position: { x: number; y: number },
+  bounds: { width: number; height: number },
+): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(position.x, PANEL_EDGE_MARGIN), bounds.width - PANEL_EDGE_MARGIN),
+    y: Math.min(Math.max(position.y, PANEL_EDGE_MARGIN), bounds.height - PANEL_EDGE_MARGIN),
+  }
+}
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, value))
@@ -244,9 +276,21 @@ export const usePetStore = create<PetStore>((set) => ({
   decayAccumulatorMs: 0,
   selectedPetId: null,
   timeScale: 1,
+  // Same bottom-left corner the old fixed dock used to sit in, but now
+  // just a starting point — the player can drag it anywhere from here.
+  panelPosition: { x: 24, y: Math.max(80, window.innerHeight - 380) },
+  panelVelocity: { x: 0, y: 0 },
+  panelHeld: false,
 
   setTimeScale: (value) => set({ timeScale: value }),
   setSceneBounds: (bounds) => set({ sceneBounds: bounds }),
+
+  startDragPanel: () => set({ panelHeld: true, panelVelocity: { x: 0, y: 0 } }),
+
+  dragPanelTo: (x, y) =>
+    set((state) => ({ panelPosition: clampPanelPosition({ x, y }, state.sceneBounds) })),
+
+  endDragPanel: (velocity) => set({ panelHeld: false, panelVelocity: velocity }),
 
   // Called every animation frame by the game loop. Needs decay happens in
   // fixed 1-second steps so its rate stays consistent regardless of frame
@@ -260,6 +304,24 @@ export const usePetStore = create<PetStore>((set) => ({
       // under setTimeScale, while wall-clock action timers (actionStartedAt
       // comparisons against `now`) stay real-time and unaffected.
       const deltaMs = rawDeltaMs * state.timeScale
+
+      // Panel momentum — real time, not scaled by timeScale, and
+      // independent of everything else below. Only decelerates a released
+      // panel; while held, dragPanelTo drives its position directly.
+      let panelPosition = state.panelPosition
+      let panelVelocity = state.panelVelocity
+      if (!state.panelHeld && (panelVelocity.x !== 0 || panelVelocity.y !== 0)) {
+        const rdt = rawDeltaMs / 1000
+        const decay = Math.pow(1 - PANEL_FRICTION, rdt)
+        const vx = panelVelocity.x * decay
+        const vy = panelVelocity.y * decay
+        panelVelocity = Math.hypot(vx, vy) < PANEL_STOP_THRESHOLD_PX_PER_SEC ? { x: 0, y: 0 } : { x: vx, y: vy }
+        panelPosition = clampPanelPosition(
+          { x: panelPosition.x + panelVelocity.x * rdt, y: panelPosition.y + panelVelocity.y * rdt },
+          state.sceneBounds,
+        )
+      }
+
       let accumulator = state.decayAccumulatorMs + deltaMs
       let pets = state.pets
 
@@ -474,7 +536,7 @@ export const usePetStore = create<PetStore>((set) => ({
         tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
       }
 
-      return { pets: moved, sceneItems, decayAccumulatorMs: accumulator, tailSegments }
+      return { pets: moved, sceneItems, decayAccumulatorMs: accumulator, tailSegments, panelPosition, panelVelocity }
     }),
 
   selectPet: (petId) => set({ selectedPetId: petId }),

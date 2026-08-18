@@ -104,32 +104,61 @@
   animation: petting-glow 0.8s ease-in-out infinite;
 }
 
-.bottom-dock {
+.game-panel {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   z-index: 10;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px 24px;
-  max-height: 46vh;
+  width: 300px;
+  max-height: 60vh;
   overflow-y: auto;
-}
-
-.stats-panel,
-.suitcase-panel,
-.breeding-panel {
   text-align: left;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 16px 20px;
-  flex: 1 1 260px;
-  min-width: 240px;
   box-shadow: var(--shadow);
+}
+
+.game-panel-handle {
+  text-align: center;
+  padding: 4px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--text);
+  opacity: 0.6;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.game-panel-handle:active {
+  cursor: grabbing;
+}
+
+.game-panel-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+}
+
+.game-panel-tabs button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.game-panel-tabs button.active {
+  background: var(--code-bg);
+  color: var(--text-h);
+  border-color: var(--accent-border);
+}
+
+.game-panel-content {
+  padding: 16px 20px;
 }
 
 .pet-name-input {
@@ -196,28 +225,6 @@
   margin-bottom: 10px;
   opacity: 0.75;
   font-size: 13px;
-}
-
-.suitcase-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-
-.suitcase-tabs button {
-  padding: 6px 14px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.suitcase-tabs button.active {
-  background: var(--code-bg);
-  color: var(--text-h);
-  border-color: var(--accent-border);
 }
 
 .cat-avatar-grid {
@@ -345,16 +352,10 @@
   pointer-events: none;
 }
 
-.breeding-panel h3 {
-  font-size: 16px;
-  margin: 0 0 10px;
-  color: var(--text-h);
-}
-
 .breeding-controls {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
 }
 
 .breeding-controls select {

@@ -28,7 +28,7 @@ export function CatAvatar({ pet }: CatAvatarProps) {
       window.removeEventListener('pointerup', onUp)
       setDragPos(null)
 
-      const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.suitcase-panel')
+      const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.game-panel')
       if (!droppedOnSuitcase) {
         usePetStore.getState().takePetFromSuitcase(pet.id, { x: ev.clientX - 40, y: ev.clientY - 30 })
       }
