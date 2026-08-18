@@ -149,6 +149,9 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     hold: 0,
     holdSwingAmount: 0,
     holdTilt: 0,
+    groom: 0,
+    stretch: 0,
+    knead: 0,
     lastNow: performance.now(),
     lastPos: { x: pet.position.x, y: pet.position.y },
   })
@@ -160,9 +163,31 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     current + (target - current) * Math.min(1, dt * rate)
   const hash = petHash(pet.id)
 
-  eased.sit = ease(eased.sit, pet.action === 'sitting' ? 1 : 0, 6)
+  // Grooming and kneading are both done sitting — reuse the seated
+  // silhouette as their base pose rather than inventing another one.
+  eased.sit = ease(
+    eased.sit,
+    pet.action === 'sitting' || pet.action === 'grooming' || pet.action === 'kneading' ? 1 : 0,
+    6,
+  )
   eased.lie = ease(eased.lie, pet.action === 'sleeping' ? 1 : 0, 5)
   const { sit, lie } = eased
+
+  // Idle animations — see catPose.ts for how groom/stretch/knead drive
+  // the legs, and below for the head tilt / stretch silhouette. Which
+  // groom variant plays is picked once per grooming session (deterministic
+  // from id + actionStartedAt, not stored) rather than re-rolled every
+  // frame.
+  eased.groom = ease(eased.groom, pet.action === 'grooming' ? 1 : 0, 6)
+  eased.stretch = ease(eased.stretch, pet.action === 'stretching' ? 1 : 0, 5)
+  eased.knead = ease(eased.knead, pet.action === 'kneading' ? 1 : 0, 6)
+  // Renamed on destructure — `bodyPose.stretch` (below) is a different,
+  // unrelated concept: gallop's per-frame gather/extend, not this action.
+  const { groom, stretch: stretchIdle, knead } = eased
+  const groomVariant: 'lick' | 'pawWash' =
+    Math.floor(pet.actionStartedAt / 137 + hash) % 2 === 0 ? 'lick' : 'pawWash'
+  const groomPhase = now / 500 + hash
+  const kneadPhase = now / 650 + hash
 
   // Held by the scruff: track how fast the cat is actually being dragged
   // right now (position delta between renders) and feed it into a swing
@@ -231,6 +256,12 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     hold: eased.hold,
     holdSwingPhase,
     holdSwingAmount: eased.holdSwingAmount,
+    groom,
+    groomVariant,
+    groomPhase,
+    stretch: stretchIdle,
+    knead,
+    kneadPhase,
   })
 
   // Gaze: eyes track a resolved target — pupils inside the eye, the eyes
@@ -267,15 +298,41 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const isHeld = pet.action === 'held'
   const isPetting = pet.action === 'petting'
 
+  // Ear flick: a quick momentary rotation, independently per ear, on a
+  // per-cat/per-ear desynced timer — ambient idle detail that plays
+  // regardless of the current action (not tied to a discrete pose), same
+  // spirit as blinking. Skipped while held (everything's dangling loose
+  // already) or deep asleep (ears settle flat, not twitching).
+  const EAR_FLICK_MS = 90
+  const earFlickActive = !isHeld && lie < 0.5
+  function earFlickDeg(earIndex: number): number {
+    if (!earFlickActive) return 0
+    const period = 5200 + ((hash * (earIndex + 3)) % 2600)
+    const t = (now + hash * 71 + earIndex * 3300) % period
+    return t < EAR_FLICK_MS ? Math.sin((t / EAR_FLICK_MS) * Math.PI) * 18 : 0
+  }
+
   const blinkPeriod = 3800 + (hash % 1700)
   const blinking = (now + hash * 137) % blinkPeriod < BLINK_MS
   const eyesClosed = isPetting || lie > 0.5 || blinking
 
+  // A flank-lick dips the head down toward the cat's own side in a slow
+  // rhythmic bob; a paw-wash follows the raised paw with a smaller,
+  // quicker dip in time with the wash. catPose.ts doesn't move any leg
+  // for 'lick', so this is the entire visible motion for that variant.
+  const groomHeadPitch =
+    groom > 0
+      ? groomVariant === 'lick'
+        ? groom * (22 + 6 * Math.sin(groomPhase))
+        : groom * (8 + 8 * Math.max(0, Math.sin(groomPhase)))
+      : 0
+
   // The SVG's facing-left flip mirrors rotation sense, so pre-correct the
   // head rotation (gaze tilt + the nose-down droop of falling asleep +
   // the current gait's carriage — forward/low for a slink, chin-up for a
-  // strut).
-  const headRotateDeg = (facingLeft ? -1 : 1) * (eased.tilt + 12 * lie + bodyPose.headPitchDeg)
+  // strut — plus grooming's dip).
+  const headRotateDeg =
+    (facingLeft ? -1 : 1) * (eased.tilt + 12 * lie + bodyPose.headPitchDeg + groomHeadPitch)
 
   // Pets need a three-way gesture (click to select / hold in place to pet /
   // drag to carry) instead of the generic click-or-drag useDraggable gives
@@ -417,7 +474,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               transformOrigin: '32px 47px',
             }}
           >
-            <g opacity={1 - sit}>
+            <g opacity={(1 - sit) * (1 - stretchIdle)}>
               <ellipse
                 cx={32}
                 cy={34}
@@ -446,6 +503,34 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
                   strokeWidth={2}
                 />
                 {spotted && <circle cx={27} cy={41} r={2.5} fill={stroke} opacity={0.6} />}
+              </g>
+            )}
+            {/* Stretching: a purpose-built silhouette rather than trying
+                to pitch the standing ellipse — a lowered chest toward the
+                front (larger x) and a raised, arched rump toward the tail
+                (smaller x, smaller y), same cross-fade approach as the
+                seated silhouette above. */}
+            {stretchIdle > 0.02 && (
+              <g opacity={stretchIdle}>
+                <ellipse
+                  cx={42}
+                  cy={44}
+                  rx={15}
+                  ry={8}
+                  fill={body}
+                  stroke={stroke}
+                  strokeWidth={2}
+                />
+                <ellipse
+                  cx={18}
+                  cy={27}
+                  rx={14}
+                  ry={12}
+                  fill={body}
+                  stroke={stroke}
+                  strokeWidth={2}
+                />
+                {spotted && <circle cx={18} cy={25} r={2.5} fill={stroke} opacity={0.6} />}
               </g>
             )}
           </g>
@@ -487,8 +572,19 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
             }}
           >
             <polygon points="42,34 50,12 66,12 74,34" fill={body} stroke={stroke} strokeWidth={2} />
-            <polygon points="47,14 53,2 58,15" fill={body} stroke={stroke} strokeWidth={1.5} />
-            <polygon points="60,15 65,2 70,14" fill={body} stroke={stroke} strokeWidth={1.5} />
+            <g
+              style={{
+                transform: `rotate(${earFlickDeg(0)}deg)`,
+                transformOrigin: '52.5px 14.5px',
+              }}
+            >
+              <polygon points="47,14 53,2 58,15" fill={body} stroke={stroke} strokeWidth={1.5} />
+            </g>
+            <g
+              style={{ transform: `rotate(${earFlickDeg(1)}deg)`, transformOrigin: '65px 14.5px' }}
+            >
+              <polygon points="60,15 65,2 70,14" fill={body} stroke={stroke} strokeWidth={1.5} />
+            </g>
 
             {EYE_XS.map((ex) => {
               const cx = ex + eased.shiftX

@@ -85,18 +85,35 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   // facing left, so it stays at the cat's back — the one thing about the
   // tail that actually does need to know about facing, since (unlike the
   // fixed-shape body/head/legs) it isn't inside the SVG's own CSS mirror
-  // for free.
+  // for free. This is a POSITION correction (put the anchor at the same
+  // final screen spot regardless of facing) — a DIRECTIONAL push added
+  // after this point (like wrapCurl below) needs the opposite treatment:
+  // adding it unflipped in local space already points the right way in
+  // final screen terms once this position correction has already run,
+  // precisely because the two corrections are inverses of each other.
+  // Re-derive this from scratch rather than assuming it if tail direction
+  // ever looks wrong — see the post-M18 tail postmortem in DEVLOG.md.
   const x = pet.facing === 'left' ? SVG_WIDTH - TAIL_ANCHOR_LOCAL.x : TAIL_ANCHOR_LOCAL.x
+  // Grooming and kneading are both done seated too (see PetSprite's `sit`
+  // blend), so the tail should drop the same way it does for 'sitting'.
+  const seated = pet.action === 'sitting' || pet.action === 'grooming' || pet.action === 'kneading'
   // The rear end drops when seated (haunches on the ground) and further
   // when lying asleep — the tail attach point follows it down so the chain
   // rests on the floor beside the cat instead of floating mid-air. The
   // chain's own easing carries the segments there smoothly. Held is the
   // same idea for a different reason: gravity, not a resting haunch, pulls
   // the tail down and loose while the cat dangles.
-  const postureDrop =
-    pet.action === 'sitting' ? 20 : pet.action === 'sleeping' ? 24 : pet.action === 'held' ? 22 : 0
+  const postureDrop = seated ? 20 : pet.action === 'sleeping' ? 24 : pet.action === 'held' ? 22 : 0
+  // Tail-wrap: once seated, the tail curls forward around the front paws
+  // rather than hanging straight down — ramps in over the first ~1.2s of
+  // sitting rather than snapping straight to the wrapped position. Added
+  // directly to the already-facing-corrected `x` above, unflipped — see
+  // the comment on `x` for why a directional push needs the opposite
+  // treatment from the position correction it's layered on top of.
+  const sitElapsedMs = seated ? now - pet.actionStartedAt : 0
+  const wrapCurl = seated ? Math.min(1, sitElapsedMs / 1200) * 7 : 0
   return {
-    x: x + swing.x,
+    x: x + swing.x + wrapCurl,
     y:
       (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) +
       postureDrop +

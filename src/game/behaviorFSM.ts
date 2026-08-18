@@ -43,6 +43,24 @@ const SIT_CHANCE = 0.3
 const SIT_MIN_MS = 6000
 const SIT_EXTRA_MS = 8000
 
+// Idle animations — self-contained performances rolled alongside
+// zoomies/sitting/wandering above, each a flat duration range.
+const GROOM_CHANCE = 0.1
+// A none-too-clean cat reaches for a groom noticeably more often —
+// hygiene-motivated grooming, not just a random idle pick.
+const GROOM_CHANCE_DIRTY = 0.22
+const GROOM_DIRTY_HYGIENE = 50
+const GROOM_MIN_MS = 3000
+const GROOM_EXTRA_MS = 2200
+
+const STRETCH_CHANCE = 0.06
+const STRETCH_MIN_MS = 1600
+const STRETCH_EXTRA_MS = 500
+
+const KNEAD_CHANCE = 0.07
+const KNEAD_MIN_MS = 3500
+const KNEAD_EXTRA_MS = 3000
+
 // Shared by idle and sitting: stand up / set off toward the single thing
 // this pet currently wants most.
 function walkToward(pet: Pet, target: AttentionTarget, now: number): Pet {
@@ -89,16 +107,26 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
 
       // Nothing in particular to want — pick between a zoomies burst, a
-      // long sit, or an ambling wander. One roll decides, so the odds
-      // stay exactly the constants above.
+      // long sit, an idle animation, or an ambling wander. One roll
+      // decides: each option claims a slice of 0..1 in turn, in the odds
+      // given by the constants above, and whichever slice the roll lands
+      // in wins; anything left over falls through to a plain wander.
       const roll = Math.random()
+      let threshold = 0
+      const claims = (chance: number) => {
+        threshold += chance
+        return roll < threshold
+      }
+
       const zoomiesChance =
         pet.needs.energy > ZOOMIES_MIN_ENERGY && pet.needs.happiness > ZOOMIES_MIN_HAPPINESS
           ? ZOOMIES_CHANCE[getLifeStage(pet.ageMs)]
           : 0
+      const groomChance =
+        pet.needs.hygiene < GROOM_DIRTY_HYGIENE ? GROOM_CHANCE_DIRTY : GROOM_CHANCE
       const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
 
-      if (roll < zoomiesChance) {
+      if (claims(zoomiesChance)) {
         return {
           ...pet,
           action: 'zoomies',
@@ -110,12 +138,48 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
         }
       }
 
-      if (roll < zoomiesChance + SIT_CHANCE) {
+      if (claims(SIT_CHANCE)) {
         return {
           ...pet,
           action: 'sitting',
           destination: null,
           actionDurationMs: SIT_MIN_MS + Math.random() * SIT_EXTRA_MS,
+          targetItemId: null,
+          targetPetId: null,
+          actionStartedAt: ctx.now,
+        }
+      }
+
+      if (claims(groomChance)) {
+        return {
+          ...pet,
+          action: 'grooming',
+          destination: null,
+          actionDurationMs: GROOM_MIN_MS + Math.random() * GROOM_EXTRA_MS,
+          targetItemId: null,
+          targetPetId: null,
+          actionStartedAt: ctx.now,
+        }
+      }
+
+      if (claims(STRETCH_CHANCE)) {
+        return {
+          ...pet,
+          action: 'stretching',
+          destination: null,
+          actionDurationMs: STRETCH_MIN_MS + Math.random() * STRETCH_EXTRA_MS,
+          targetItemId: null,
+          targetPetId: null,
+          actionStartedAt: ctx.now,
+        }
+      }
+
+      if (claims(KNEAD_CHANCE)) {
+        return {
+          ...pet,
+          action: 'kneading',
+          destination: null,
+          actionDurationMs: KNEAD_MIN_MS + Math.random() * KNEAD_EXTRA_MS,
           targetItemId: null,
           targetPetId: null,
           actionStartedAt: ctx.now,
@@ -139,6 +203,18 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
       // Someone's on their way over to play — stay seated and wait.
       if (pet.socialClaimedBy) return pet
+      if (ctx.now - pet.actionStartedAt > pet.actionDurationMs) {
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
+      }
+      return pet
+    }
+    // Idle animations run to completion once started — unlike 'sitting',
+    // a good enough reason to get up doesn't cut these short, since a
+    // groom or stretch interrupted mid-pose reads as broken rather than
+    // as a cat changing its mind (same reasoning as 'eating'/'playing').
+    case 'grooming':
+    case 'stretching':
+    case 'kneading': {
       if (ctx.now - pet.actionStartedAt > pet.actionDurationMs) {
         return { ...pet, action: 'idle', actionStartedAt: ctx.now }
       }

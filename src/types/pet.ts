@@ -25,6 +25,16 @@ export type ActionState =
   // store-side in petStore.tick() rather than the FSM, since it needs the
   // item's live position — same reason 'pouncing' itself is store-side.
   | 'stalking'
+  // Idle animations — timed self-contained performances a cat picks
+  // instead of wandering (same idle-decision roll as 'sitting'/'zoomies'),
+  // uninterruptible once started (like 'eating'/'playing', not 'sitting')
+  // since a groom or stretch cut off mid-pose reads as broken rather than
+  // as a cat changing its mind. Which specific animation within each is
+  // cosmetic, resolved deterministically from id+actionStartedAt rather
+  // than stored, so no new Pet field is needed for it.
+  | 'grooming' // self-licking or a paw-wash over the head/ear
+  | 'stretching' // front-down, rump-up
+  | 'kneading' // rhythmic paw presses, settled in place
 export type Facing = 'left' | 'right'
 
 // A ballistic hop from one floor point to another, advanced by movement.ts

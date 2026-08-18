@@ -75,6 +75,69 @@ describe('idle decisions', () => {
     const next = updatePetBehavior(pet, { now: AFTER_PAUSE, sceneBounds: BOUNDS, bestTarget: null })
     expect(next.action).toBe('walking')
   })
+
+  // Default makePet() needs (energy 85, happiness 60, hygiene 90) give
+  // cumulative slices: zoomies [0, .08), sitting [.08, .38), groom
+  // [.38, .48), stretch [.48, .54), knead [.54, .61), walking [.61, 1).
+  it('grooms on a roll in the groom slice', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.4)
+    const pet = makePet()
+    const next = updatePetBehavior(pet, { now: AFTER_PAUSE, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('grooming')
+    expect(next.actionDurationMs).toBeGreaterThan(0)
+  })
+
+  it('stretches on a roll in the stretch slice', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const pet = makePet()
+    const next = updatePetBehavior(pet, { now: AFTER_PAUSE, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('stretching')
+    expect(next.actionDurationMs).toBeGreaterThan(0)
+  })
+
+  it('kneads on a roll in the knead slice', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.58)
+    const pet = makePet()
+    const next = updatePetBehavior(pet, { now: AFTER_PAUSE, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('kneading')
+    expect(next.actionDurationMs).toBeGreaterThan(0)
+  })
+
+  it('grooms more often when hygiene is low, same roll otherwise landing on a wander', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const clean = makePet()
+    const dirty = makePet({ needs: { ...makePet().needs, hygiene: 20 } })
+    const cleanNext = updatePetBehavior(clean, {
+      now: AFTER_PAUSE,
+      sceneBounds: BOUNDS,
+      bestTarget: null,
+    })
+    const dirtyNext = updatePetBehavior(dirty, {
+      now: AFTER_PAUSE,
+      sceneBounds: BOUNDS,
+      bestTarget: null,
+    })
+    expect(cleanNext.action).toBe('stretching')
+    expect(dirtyNext.action).toBe('grooming')
+  })
+})
+
+describe.each(['grooming', 'stretching', 'kneading'] as const)('%s', (action) => {
+  it('runs to completion, ignoring a target that would interrupt sitting', () => {
+    const pet = makePet({ action, actionStartedAt: 0, actionDurationMs: 5000 })
+    const next = updatePetBehavior(pet, {
+      now: 1000,
+      sceneBounds: BOUNDS,
+      bestTarget: { kind: 'item', id: 'ball-1', position: { x: 250, y: 300 } },
+    })
+    expect(next).toBe(pet)
+  })
+
+  it('returns to idle once its duration elapses', () => {
+    const pet = makePet({ action, actionStartedAt: 0, actionDurationMs: 2000 })
+    const next = updatePetBehavior(pet, { now: 2500, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('idle')
+  })
 })
 
 describe('sitting', () => {

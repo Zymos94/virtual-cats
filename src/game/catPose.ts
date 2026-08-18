@@ -128,6 +128,19 @@ export interface PoseInput {
   // cat is currently being carried (PetSprite tracks drag velocity; this
   // module stays pure and just receives the already-eased result).
   holdSwingAmount: number
+  // Idle animations (see behaviorFSM.ts's 'grooming'/'stretching'/
+  // 'kneading'). Only the leg-relevant parts live here — head tilt and
+  // the stretch body silhouette are PetSprite's job, same split as the
+  // rest of this pose layer.
+  groom: number // 0..1
+  // 'pawWash' lifts the near-front paw to the face; 'lick' leaves every
+  // leg alone (just standing/seated) since the cat's reaching down at its
+  // own side, not up at its head.
+  groomVariant: 'lick' | 'pawWash'
+  groomPhase: number // radians, time-based
+  stretch: number // 0..1 — front-down, rump-back brace
+  knead: number // 0..1
+  kneadPhase: number // radians, time-based
 }
 
 export function computeLegPoses(input: PoseInput): LegPose[] {
@@ -184,6 +197,37 @@ export function computeLegPoses(input: PoseInput): LegPose[] {
         legLooseness
       const dangle = { x: hip.x + swing, y: hip.y + (leg.isFront ? 8 : 10) }
       foot = { x: lerp(foot.x, dangle.x, input.hold), y: lerp(foot.y, dangle.y, input.hold) }
+    }
+
+    // Grooming: a paw-wash lifts just the near-front paw in slow passes
+    // up toward the face (Math.max(0, sin(...)) holds it at rest for half
+    // the cycle, then arcs it up and back down for the other half — one
+    // wipe per cycle, not a symmetric back-and-forth). A flank-lick
+    // doesn't move any leg — the cat's reaching down at its own side, not
+    // up at its head — so it's handled entirely in PetSprite's head tilt.
+    if (input.groom > 0 && input.groomVariant === 'pawWash' && leg.isFront && leg.isNear) {
+      const wash = Math.max(0, Math.sin(input.groomPhase))
+      const target = { x: hip.x + 9 - wash * 4, y: hip.y - 6 - wash * 16 }
+      foot = { x: lerp(foot.x, target.x, input.groom), y: lerp(foot.y, target.y, input.groom) }
+    }
+
+    // Stretching: front paws reach far forward and low, hind legs brace
+    // back — together with the purpose-built stretch silhouette in
+    // PetSprite, reads as the classic front-down, rump-up stretch.
+    if (input.stretch > 0) {
+      const target = leg.isFront ? { x: hip.x + 15, y: GROUND_Y } : { x: hip.x - 5, y: GROUND_Y }
+      foot = { x: lerp(foot.x, target.x, input.stretch), y: lerp(foot.y, target.y, input.stretch) }
+    }
+
+    // Kneading: front paws alternate pressing forward-and-down then
+    // pulling back-and-up, the classic slow dough-kneading rhythm — the
+    // near and far paw run half a cycle apart. Hind legs stay put (seated
+    // — PetSprite eases `sit` in alongside this).
+    if (input.knead > 0 && leg.isFront) {
+      const phase = input.kneadPhase + (leg.isNear ? Math.PI : 0)
+      const push = Math.sin(phase)
+      const target = { x: hip.x + 3 + push * 3, y: GROUND_Y - Math.max(0, -push) * 3 }
+      foot = { x: lerp(foot.x, target.x, input.knead), y: lerp(foot.y, target.y, input.knead) }
     }
 
     return {
