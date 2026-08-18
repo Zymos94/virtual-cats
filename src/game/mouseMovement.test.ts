@@ -9,6 +9,7 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     destination: null,
     state: 'sneaking',
     facing: 'right',
+    color: 'grey',
     livesRemaining: 4,
     actionStartedAt: 0,
     lastThreatenedAt: 0,
@@ -17,6 +18,8 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     currentSpeed: 0,
     stridePhase: 0,
     jump: null,
+    targetCheeseId: null,
+    carryingCheese: false,
     ...overrides,
   }
 }
@@ -39,6 +42,20 @@ describe('moveMouse', () => {
     expect(fleer.currentSpeed).toBeGreaterThan(sneaker.currentSpeed)
     expect(fleer.currentSpeed).toBeCloseTo(MOUSE_FLEE_SPEED, 0)
     expect(sneaker.currentSpeed).toBeCloseTo(MOUSE_SNEAK_SPEED, 0)
+  })
+
+  it('hustles for cheese faster than a cautious sneak but slower than a terrified flee', () => {
+    let sneaker = makeMouse({ destination: { x: 2000, y: 300 } })
+    let cheeser = makeMouse({ destination: { x: 2000, y: 300 }, targetCheeseId: 'cheese-1' })
+    let carrier = makeMouse({ destination: { x: 2000, y: 300 }, carryingCheese: true })
+    for (let i = 0; i < 120; i++) {
+      sneaker = moveMouse(sneaker, 16)
+      cheeser = moveMouse(cheeser, 16)
+      carrier = moveMouse(carrier, 16)
+    }
+    expect(cheeser.currentSpeed).toBeGreaterThan(sneaker.currentSpeed)
+    expect(cheeser.currentSpeed).toBeLessThan(MOUSE_FLEE_SPEED)
+    expect(carrier.currentSpeed).toBeCloseTo(cheeser.currentSpeed, 0)
   })
 
   it('does not move while held even with a destination set', () => {

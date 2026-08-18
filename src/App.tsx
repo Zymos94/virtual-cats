@@ -14,6 +14,7 @@ function App() {
   const sceneItems = usePetStore((state) => state.sceneItems)
   const mice = usePetStore((state) => state.mice)
   const sceneBounds = usePetStore((state) => state.sceneBounds)
+  const mouseHolePeeking = usePetStore((state) => state.mouseHolePeeking)
   const selectedPetId = usePetStore((state) => state.selectedPetId)
   const selectedPet = selectedPetId ? pets[selectedPetId] : null
 
@@ -28,6 +29,7 @@ function App() {
         mice={Object.values(mice)}
         sceneBounds={sceneBounds}
         selectedPetId={selectedPetId}
+        mouseHolePeeking={mouseHolePeeking}
       />
 
       <div className="top-bar">

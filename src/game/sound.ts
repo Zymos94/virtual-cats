@@ -3,6 +3,10 @@ import catMewFood from '../assets/sounds/cat_mewfood.wav'
 import catChirp from '../assets/sounds/cat-chirp.mp3'
 import catPurrLoop from '../assets/sounds/cat_purractive_loop.wav'
 import catHiss from '../assets/sounds/cat-hiss.mp3'
+import catGrowl from '../assets/sounds/cat-growl.mp3'
+import catMeowHungry from '../assets/sounds/cat-meow-hungry.mp3'
+import catSleepyPurrLoop from '../assets/sounds/cat_purrsleepy_loop.wav'
+import mouseSqueak from '../assets/sounds/mouse-squeak.mp3'
 
 const SOUND_URLS = {
   select: catMeowShort,
@@ -10,6 +14,10 @@ const SOUND_URLS = {
   playing: catChirp,
   purrLoop: catPurrLoop,
   hiss: catHiss,
+  growl: catGrowl,
+  hungry: catMeowHungry,
+  sleepyPurrLoop: catSleepyPurrLoop,
+  squeak: mouseSqueak,
 } as const
 
 export type SoundKey = keyof typeof SOUND_URLS

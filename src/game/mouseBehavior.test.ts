@@ -19,6 +19,7 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     destination: null,
     state: 'sneaking',
     facing: 'right',
+    color: 'grey',
     livesRemaining: 4,
     actionStartedAt: 0,
     lastThreatenedAt: 0,
@@ -27,6 +28,8 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     currentSpeed: 0,
     stridePhase: 0,
     jump: null,
+    targetCheeseId: null,
+    carryingCheese: false,
     ...overrides,
   }
 }

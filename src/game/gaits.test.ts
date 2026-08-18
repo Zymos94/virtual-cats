@@ -110,6 +110,18 @@ describe('selectGait', () => {
     expect(selectGait(makePet({ targetPetId: 'cat-2' })).name).toBe('trot')
   })
 
+  it('trots after a mouse that is merely sneaking', () => {
+    expect(selectGait(makePet({ targetMouseId: 'mouse-1' }), false).name).toBe('trot')
+  })
+
+  it('gallops after a mouse that is actually fleeing', () => {
+    expect(selectGait(makePet({ targetMouseId: 'mouse-1' }), true).name).toBe('gallop')
+  })
+
+  it('does not gallop from a fleeing mouse elsewhere in the room it is not even chasing', () => {
+    expect(selectGait(makePet(), true).name).toBe('walk')
+  })
+
   it('slinks while stalking', () => {
     expect(selectGait(makePet({ action: 'stalking', targetItemId: 'mouse-1' })).name).toBe('slink')
   })

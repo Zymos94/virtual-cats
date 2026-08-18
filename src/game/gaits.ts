@@ -134,16 +134,24 @@ export const STRUT: GaitDef = {
 // zoomies does. Deliberately strict thresholds: needs decay slowly by
 // design (see CLAUDE.md's cozy-not-hectic rule), so this should read as a
 // rare, dramatic moment, not a routine gait.
-const URGENT_HUNGER = 20
+export const URGENT_HUNGER = 20
 const URGENT_ENERGY = 15
 const STRUT_HAPPINESS = 80
 
-export function selectGait(pet: Pet): GaitDef {
+// `chasingFleeingMouse` is resolved by the caller (petStore.ts has the live
+// Mouse to check `targetMouseId` against; PetSprite.tsx looks the same
+// thing up from its own `mice` prop) rather than passed as a raw Mouse
+// here, keeping this pure function's only real input still just the Pet.
+export function selectGait(pet: Pet, chasingFleeingMouse = false): GaitDef {
   if (pet.action === 'stalking') return SLINK
   if (pet.action === 'zoomies') return GALLOP
   if (pet.targetItemId && (pet.needs.hunger < URGENT_HUNGER || pet.needs.energy < URGENT_ENERGY)) {
     return GALLOP
   }
+  // A fleeing mouse is genuinely trying to escape — a cat giving real chase
+  // breaks into a flat-out run, not the same measured trot it'd use closing
+  // on a rolling ball or a still-unaware, sneaking mouse.
+  if (pet.targetMouseId && chasingFleeingMouse) return GALLOP
   if (pet.targetItemId || pet.targetPetId || pet.targetMouseId) return TROT
   if (pet.action === 'walking' && pet.needs.happiness > STRUT_HAPPINESS) return STRUT
   return WALK

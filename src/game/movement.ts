@@ -41,15 +41,21 @@ export function randomPointInBounds(
   }
 }
 
-function targetSpeedFor(pet: Pet, distanceLeft: number): number {
+function targetSpeedFor(pet: Pet, distanceLeft: number, chasingFleeingMouse: boolean): number {
   const base =
     pet.action === 'zoomies'
       ? RUN_SPEED
       : pet.action === 'stalking'
         ? STALK_SPEED
-        : pet.targetItemId || pet.targetPetId || pet.targetMouseId
-          ? TROT_SPEED
-          : AMBLE_SPEED
+        : // Matches selectGait's own gallop trigger (gaits.ts) — a cat
+          // visibly galloping after a fleeing mouse needs to actually move
+          // at gallop speed, not just look like it while still only
+          // trotting.
+          pet.targetMouseId && chasingFleeingMouse
+          ? RUN_SPEED
+          : pet.targetItemId || pet.targetPetId || pet.targetMouseId
+            ? TROT_SPEED
+            : AMBLE_SPEED
   const scaled = base * getLifeStageSpeedMultiplier(getLifeStage(pet.ageMs))
   if (distanceLeft >= ARRIVE_RADIUS) return scaled
   return Math.max(MIN_ARRIVE_SPEED, scaled * (distanceLeft / ARRIVE_RADIUS))
@@ -65,7 +71,7 @@ function smoothstep(t: number): number {
 // (pounce, zoomies hop), otherwise normal destination-seeking for the
 // moving actions, with eased acceleration between gaits. Still pets just
 // bleed off any leftover speed.
-export function movePet(pet: Pet, deltaMs: number): Pet {
+export function movePet(pet: Pet, deltaMs: number, chasingFleeingMouse = false): Pet {
   const dt = deltaMs / 1000
 
   if (pet.jump) {
@@ -101,7 +107,7 @@ export function movePet(pet: Pet, deltaMs: number): Pet {
   const dist = Math.hypot(dx, dy)
   if (dist < 1) return pet.currentSpeed === 0 ? pet : { ...pet, currentSpeed: 0 }
 
-  const target = targetSpeedFor(pet, dist)
+  const target = targetSpeedFor(pet, dist, chasingFleeingMouse)
   const currentSpeed =
     pet.currentSpeed < target
       ? Math.min(target, pet.currentSpeed + ACCEL * dt)

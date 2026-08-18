@@ -19,7 +19,7 @@ import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
 import { getTailAnchorLocal } from '../game/tailMood'
 import { initialSegments, stepChain, type Point } from '../game/tailPhysics'
-import { TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
+import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 import { STARTER_AGE_MS } from '../game/lifeStage'
 import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
 import {
@@ -32,6 +32,7 @@ import {
 } from '../game/mouseBehavior'
 import { moveMouse } from '../game/mouseMovement'
 import { getMouseHolePosition, WALL_BAND_FRACTION } from '../game/roomLayout'
+import { URGENT_HUNGER } from '../game/gaits'
 
 interface PetStore {
   pets: Record<string, Pet>
@@ -48,6 +49,16 @@ interface PetStore {
   sceneBounds: { width: number; height: number }
   decayAccumulatorMs: number
   selectedPetId: string | null
+  // The mouse hole occasionally shows a peek (two little eyes) before
+  // sometimes spawning a mouse of its own — see the MOUSEHOLE_* constants
+  // and tick()'s peek step. Not persisted (like mice/tailSegments): a
+  // reload just starts with nothing scheduled yet, same reasoning as the
+  // stale-session-timestamp bug this sidesteps on purpose (see DEVLOG).
+  mouseHolePeeking: boolean
+  mouseHolePeekStartedAt: number
+  // 0 is a sentinel meaning "not yet scheduled" — the first tick schedules
+  // a real one from that tick's own `now` rather than firing immediately.
+  nextMouseHolePeekAt: number
   // Multiplies every deltaMs-driven effect (needs decay, aging, movement,
   // item physics) — 1 is normal cozy pace, higher fast-forwards the whole
   // simulation uniformly. Doesn't affect wall-clock action timers (how
@@ -132,6 +143,13 @@ const STALK_RANGE = 200
 // the leap and darted clear. Tighter than POUNCE_MISS_DISTANCE since a
 // mouse is a much smaller target than a rolling ball.
 const MOUSE_CATCH_DISTANCE = 34
+// Purely cosmetic coat-color roll at spawn — no behavioral difference.
+const MOUSE_BROWN_CHANCE = 0.3
+// A calmly sneaking mouse only notices cheese within this range — not
+// omniscient about the whole room, same spirit as a cat's own attentionSpan.
+const MOUSE_CHEESE_DETECT_RADIUS = 250
+// Close enough to a claimed cheese item to actually grab it.
+const MOUSE_CHEESE_PICKUP_RANGE = 12
 // How long a cat holds a caught mouse in its jaws before chucking it.
 const HOLD_MOUSE_MS = 2200
 // How far the chuck hop throws the mouse.
@@ -143,10 +161,27 @@ const MOUSE_RECHASE_CHANCE = 0.75
 // Close enough to the mouse hole that a fleeing mouse escapes — despawns
 // outright, its goal met.
 const MOUSE_HOLE_DESPAWN_RANGE = 20
-// Where a held mouse renders relative to its holder's own position —
-// roughly the mouth, offset in the direction the cat is facing.
-const MOUSE_MOUTH_OFFSET_X = 24
-const MOUSE_MOUTH_OFFSET_Y = 6
+// Where a held mouse renders, in the holder's own *local* (facing-right)
+// coordinates — derived from PetSprite.tsx's head geometry: the head
+// polygon's front edge reaches x=74, its eyes sit at EYE_XS [55,63] /
+// EYE_Y=23, so a point just in front of and slightly below the eyes lands
+// on the snout/mouth rather than (the old constants' 24,6) the middle of
+// the body. Mirrored to world space the same way PetSprite.tsx's own
+// gaze-target code does (`SVG_WIDTH - x` for a left-facing cat) — a plain
+// sign flip is the wrong correction here, same reasoning as the tail
+// anchor's facing correction (see tailMood.ts).
+const MOUSE_MOUTH_LOCAL_X = 70
+const MOUSE_MOUTH_LOCAL_Y = 27
+
+// The mouse hole occasionally shows a peek on its own, independent of
+// anything a cat or mouse is doing — a bit of ambient room life. Wide
+// interval range so it never feels metronomic.
+const MOUSEHOLE_PEEK_MIN_INTERVAL_MS = 20000
+const MOUSEHOLE_PEEK_MAX_INTERVAL_MS = 50000
+const MOUSEHOLE_PEEK_DURATION_MS = 1400
+// Most peeks are just a look-around — only some of them commit to actually
+// coming out.
+const MOUSEHOLE_SPAWN_CHANCE = 0.4
 
 // Very high on purpose — the panel should feel grabby, not slippery. A
 // released panel travels only a token distance before stopping, unlike a
@@ -210,6 +245,7 @@ function makeMouse(id: string, position: { x: number; y: number }, now: number):
     destination: null,
     state: 'sneaking',
     facing: Math.random() < 0.5 ? 'left' : 'right',
+    color: Math.random() < MOUSE_BROWN_CHANCE ? 'brown' : 'grey',
     livesRemaining:
       MOUSE_MIN_LIVES + Math.floor(Math.random() * (MOUSE_MAX_LIVES - MOUSE_MIN_LIVES + 1)),
     actionStartedAt: now,
@@ -219,6 +255,8 @@ function makeMouse(id: string, position: { x: number; y: number }, now: number):
     currentSpeed: 0,
     stridePhase: 0,
     jump: null,
+    targetCheeseId: null,
+    carryingCheese: false,
   }
 }
 
@@ -370,6 +408,9 @@ export const usePetStore = create<PetStore>((set) => ({
   tailSegments: {},
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
+  mouseHolePeeking: false,
+  mouseHolePeekStartedAt: 0,
+  nextMouseHolePeekAt: 0,
   selectedPetId: null,
   timeScale: 1,
   // Same bottom-left corner the old fixed dock used to sit in, but now
@@ -467,6 +508,38 @@ export const usePetStore = create<PetStore>((set) => ({
       // an escape/despawn condition (below) to aim for.
       const holePosition = getMouseHolePosition(state.sceneBounds)
 
+      // Ambient mousehole life, independent of any cat/mouse currently in
+      // the room: on no particular schedule (a random interval within a
+      // wide range), two eyes peek out for a moment; only some of those
+      // peeks commit to an actual mouse coming out. 0 is a sentinel for
+      // "never scheduled" (a fresh load/reset) — the first tick just
+      // schedules a real one from its own `now` rather than firing
+      // instantly on load.
+      let mouseHolePeeking = state.mouseHolePeeking
+      let mouseHolePeekStartedAt = state.mouseHolePeekStartedAt
+      let nextMouseHolePeekAt = state.nextMouseHolePeekAt
+      if (mouseHolePeeking && now - mouseHolePeekStartedAt >= MOUSEHOLE_PEEK_DURATION_MS) {
+        mouseHolePeeking = false
+      }
+      if (nextMouseHolePeekAt === 0) {
+        nextMouseHolePeekAt =
+          now +
+          MOUSEHOLE_PEEK_MIN_INTERVAL_MS +
+          Math.random() * (MOUSEHOLE_PEEK_MAX_INTERVAL_MS - MOUSEHOLE_PEEK_MIN_INTERVAL_MS)
+      } else if (!mouseHolePeeking && now >= nextMouseHolePeekAt) {
+        mouseHolePeeking = true
+        mouseHolePeekStartedAt = now
+        nextMouseHolePeekAt =
+          now +
+          MOUSEHOLE_PEEK_MIN_INTERVAL_MS +
+          Math.random() * (MOUSEHOLE_PEEK_MAX_INTERVAL_MS - MOUSEHOLE_PEEK_MIN_INTERVAL_MS)
+        if (Math.random() < MOUSEHOLE_SPAWN_CHANCE) {
+          const spawnId = nanoid()
+          mice = { ...mice, [spawnId]: makeMouse(spawnId, holePosition, now) }
+          playSound('squeak')
+        }
+      }
+
       // Mice are fully autonomous — their own AI runs independently of any
       // cat, using last tick's cat positions (one tick of lag, imperceptible)
       // to decide whether they've been spotted. Held mice skip this
@@ -477,6 +550,70 @@ export const usePetStore = create<PetStore>((set) => ({
       for (const mouseId in mice) {
         let mouse = mice[mouseId]
         if (mouse.state !== 'held') {
+          // Cheese: only while calmly sneaking — scareMouse (called from
+          // updateMouseBehavior below if spotted this tick) drops all of
+          // this outright, a cheese run isn't worth its life. Store-side
+          // (not in updateMouseBehavior's pure function) since picking up
+          // and delivering cheese both mutate sceneItems, same reasoning as
+          // a cat's own item consumption.
+          if (mouse.state === 'sneaking' && !mouse.jump) {
+            if (mouse.carryingCheese) {
+              if (
+                Math.hypot(mouse.position.x - holePosition.x, mouse.position.y - holePosition.y) <
+                MOUSE_HOLE_DESPAWN_RANGE
+              ) {
+                continue // delivered — despawns, goal met, same as an escaped fleeing mouse
+              }
+            } else if (mouse.targetCheeseId) {
+              const cheese = sceneItems[mouse.targetCheeseId]
+              if (!cheese || cheese.claimedBy !== mouseId) {
+                mouse = { ...mouse, targetCheeseId: null, destination: null }
+              } else if (
+                Math.hypot(
+                  mouse.position.x - cheese.position.x,
+                  mouse.position.y - cheese.position.y,
+                ) < MOUSE_CHEESE_PICKUP_RANGE
+              ) {
+                delete sceneItems[mouse.targetCheeseId]
+                mouse = {
+                  ...mouse,
+                  targetCheeseId: null,
+                  carryingCheese: true,
+                  destination: holePosition,
+                  actionStartedAt: now,
+                }
+              }
+              // else: still on its way — destination was already aimed at
+              // the cheese when claimed below, and a settled item never
+              // moves on its own, so there's nothing to re-aim at.
+            } else {
+              let nearestCheeseId: string | null = null
+              let nearestCheeseDist = MOUSE_CHEESE_DETECT_RADIUS
+              for (const itemId in sceneItems) {
+                const item = sceneItems[itemId]
+                if (item.claimedBy || item.held || item.itemTypeId !== 'cheese') continue
+                if (item.height > 0.5) continue // still airborne/settling
+                const d = Math.hypot(
+                  mouse.position.x - item.position.x,
+                  mouse.position.y - item.position.y,
+                )
+                if (d < nearestCheeseDist) {
+                  nearestCheeseDist = d
+                  nearestCheeseId = itemId
+                }
+              }
+              if (nearestCheeseId) {
+                sceneItems[nearestCheeseId] = { ...sceneItems[nearestCheeseId], claimedBy: mouseId }
+                mouse = {
+                  ...mouse,
+                  targetCheeseId: nearestCheeseId,
+                  destination: sceneItems[nearestCheeseId].position,
+                  actionStartedAt: now,
+                }
+              }
+            }
+          }
+
           let spotted = false
           let nearestThreatPosition: { x: number; y: number } | null = null
           let nearestDist = Infinity
@@ -495,6 +632,8 @@ export const usePetStore = create<PetStore>((set) => ({
               nearestThreatPosition = cat.position
             }
           }
+          const targetCheeseBeforeScareCheck = mouse.targetCheeseId
+          const stateBeforeScareCheck = mouse.state
           mouse = updateMouseBehavior(mouse, {
             now,
             sceneBounds: state.sceneBounds,
@@ -503,6 +642,22 @@ export const usePetStore = create<PetStore>((set) => ({
             nearestThreatPosition,
             holePosition,
           })
+          // A fresh scare only — matches scareMouse's own freshScare check,
+          // so a mouse already fleeing and re-spotted doesn't squeak every
+          // single tick of an ongoing chase.
+          if (stateBeforeScareCheck !== 'fleeing' && mouse.state === 'fleeing') {
+            playSound('squeak')
+          }
+          if (
+            targetCheeseBeforeScareCheck &&
+            mouse.targetCheeseId !== targetCheeseBeforeScareCheck &&
+            sceneItems[targetCheeseBeforeScareCheck]?.claimedBy === mouseId
+          ) {
+            sceneItems[targetCheeseBeforeScareCheck] = {
+              ...sceneItems[targetCheeseBeforeScareCheck],
+              claimedBy: null,
+            }
+          }
           mouse = moveMouse(mouse, deltaMs)
         }
         nextMice[mouseId] = mouse
@@ -593,6 +748,9 @@ export const usePetStore = create<PetStore>((set) => ({
             pet.position,
             holePosition,
           )
+          // Coming out of 'held', this is always a fresh scare — no need to
+          // check, unlike the other two scareMouse call sites.
+          playSound('squeak')
           // "usually" keeps pursuing, per the design brief — not always.
           // If not, release the claim too, or nobody could ever target
           // this mouse again once it's off chasing freely.
@@ -603,8 +761,12 @@ export const usePetStore = create<PetStore>((set) => ({
               ...scared,
               heldBy: null,
               claimedBy: keepChasing ? id : null,
+              // Hops from wherever it actually is (the mouth position tracked
+              // each tick above), not the cat's own base position — those
+              // differ enough that starting from pet.position would visibly
+              // snap the mouse there for one frame before the hop even starts.
               jump: {
-                from: pet.position,
+                from: heldMouse.position,
                 to: chuckTo,
                 progressMs: 0,
                 durationMs: MOUSE_CHUCK_DURATION_MS,
@@ -696,6 +858,15 @@ export const usePetStore = create<PetStore>((set) => ({
           claimed.add(decided.targetItemId)
           const claimedItem = sceneItems[decided.targetItemId]
           if (claimedItem) sceneItems[decided.targetItemId] = { ...claimedItem, claimedBy: id }
+          // A hungry-meow payoff for the same urgency threshold that
+          // already breaks a cat into a gallop toward food (gaits.ts) —
+          // only on freshly deciding to go for it, not every tick still
+          // walking there.
+          const claimedDefinition =
+            claimedItem && ITEM_DEFINITIONS.find((d) => d.id === claimedItem.itemTypeId)
+          if (claimedDefinition?.category === 'food' && pet.needs.hunger < URGENT_HUNGER) {
+            playSound('hungry')
+          }
         }
         // Redirecting to someone else (or giving up entirely) without ever arriving must release
         // the old claim, or the abandoned partner waits forever for a cat that's already moved on
@@ -864,11 +1035,28 @@ export const usePetStore = create<PetStore>((set) => ({
                   holePosition,
                 ),
               }
+              // A pounce can catch a mouse mid-cheese-run — scareMouse just
+              // cleared its own targetCheeseId, but the cheese item's claim
+              // needs releasing too, same discipline as every other
+              // abandoned-target claim this tick.
+              if (
+                target.targetCheeseId &&
+                sceneItems[target.targetCheeseId]?.claimedBy === targetMouseId
+              ) {
+                sceneItems[target.targetCheeseId] = {
+                  ...sceneItems[target.targetCheeseId],
+                  claimedBy: null,
+                }
+              }
+              if (target.state !== 'fleeing') playSound('squeak')
             }
           }
         }
 
-        let finalPet = movePet(decided, deltaMs)
+        const chasingFleeingMouse = !!(
+          decided.targetMouseId && mice[decided.targetMouseId]?.state === 'fleeing'
+        )
+        let finalPet = movePet(decided, deltaMs, chasingFleeingMouse)
 
         // Arrived at a targeted item this tick — use it: apply its effect
         // and switch to an eating/sleeping/playing animation. Consumables
@@ -918,6 +1106,10 @@ export const usePetStore = create<PetStore>((set) => ({
             // the claim too, or nobody could ever target this item again.
             if (placedItem) sceneItems[placedItem.id] = { ...placedItem, claimedBy: null }
             finalPet = { ...finalPet, targetItemId: null }
+            // A growl only for an actual missed leap, not just "walked up
+            // and the item had already rolled off" — pet.action captures
+            // what this cat was doing *before* this tick's landing.
+            if (pet.action === 'pouncing') playSound('growl')
           }
         }
 
@@ -968,7 +1160,19 @@ export const usePetStore = create<PetStore>((set) => ({
               mice = { ...mice, [finalPet.targetMouseId]: { ...targetMouse, claimedBy: null } }
             }
             finalPet = { ...finalPet, targetMouseId: null }
+            if (pet.action === 'pouncing') playSound('growl')
           }
+        }
+
+        // A soft ambient loop while actually asleep — covers both ways a
+        // cat gets there this tick (arriving at a bed, or collapsing right
+        // here from sheer exhaustion; see behaviorFSM.ts's 'idle' case),
+        // since both already show up as this single before/after
+        // comparison by the time we get here.
+        if (pet.action !== 'sleeping' && finalPet.action === 'sleeping') {
+          startLoop(id, 'sleepyPurrLoop', 0.3)
+        } else if (pet.action === 'sleeping' && finalPet.action !== 'sleeping') {
+          stopLoop(id)
         }
 
         moved[id] = finalPet
@@ -1065,14 +1269,17 @@ export const usePetStore = create<PetStore>((set) => ({
         if (mouse.state === 'held' && mouse.heldBy) {
           const holder = moved[mouse.heldBy]
           if (holder) {
-            const dirX = holder.facing === 'left' ? -1 : 1
+            const facingLeft = holder.facing === 'left'
             mice = {
               ...mice,
               [mouseId]: {
                 ...mouse,
+                facing: holder.facing,
                 position: {
-                  x: holder.position.x + dirX * MOUSE_MOUTH_OFFSET_X,
-                  y: holder.position.y + MOUSE_MOUTH_OFFSET_Y,
+                  x:
+                    holder.position.x +
+                    (facingLeft ? SVG_WIDTH - MOUSE_MOUTH_LOCAL_X : MOUSE_MOUTH_LOCAL_X),
+                  y: holder.position.y + MOUSE_MOUTH_LOCAL_Y,
                 },
               },
             }
@@ -1118,6 +1325,9 @@ export const usePetStore = create<PetStore>((set) => ({
         tailSegments,
         panelPosition,
         panelVelocity,
+        mouseHolePeeking,
+        mouseHolePeekStartedAt,
+        nextMouseHolePeekAt,
       }
     }),
 
@@ -1210,6 +1420,10 @@ export const usePetStore = create<PetStore>((set) => ({
     set((state) => {
       const pet = state.pets[petId]
       if (!pet) return state
+      // A sleeping (or, in principle, mid-pet) cat put away shouldn't keep
+      // purring from inside the suitcase forever — stopLoop is a no-op if
+      // this id has no active loop, so this is safe to call unconditionally.
+      stopLoop(petId)
       const pets = releaseSocialClaims(state.pets, petId)
       return {
         pets: {
@@ -1386,6 +1600,9 @@ export const usePetStore = create<PetStore>((set) => ({
       mice: {},
       tailSegments: {},
       selectedPetId: null,
+      mouseHolePeeking: false,
+      mouseHolePeekStartedAt: 0,
+      nextMouseHolePeekAt: 0,
     })
   },
 }))

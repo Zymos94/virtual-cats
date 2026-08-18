@@ -6,6 +6,9 @@ export const MOUSE_SNEAK_SPEED = 16
 // only a cat that's already close (stalk range) or mid-pounce can
 // realistically catch up.
 export const MOUSE_FLEE_SPEED = 145
+// A determined trip, not a cautious creep or a terrified sprint — going for
+// (or hauling back) a piece of cheese is purposeful but not panicked.
+export const MOUSE_CHEESE_SPEED = 55
 
 const ACCEL = 220
 const DECEL = 500
@@ -47,7 +50,12 @@ export function moveMouse(mouse: Mouse, deltaMs: number): Mouse {
   const dist = Math.hypot(dx, dy)
   if (dist < 1) return mouse.currentSpeed === 0 ? mouse : { ...mouse, currentSpeed: 0 }
 
-  const target = mouse.state === 'fleeing' ? MOUSE_FLEE_SPEED : MOUSE_SNEAK_SPEED
+  const target =
+    mouse.state === 'fleeing'
+      ? MOUSE_FLEE_SPEED
+      : mouse.targetCheeseId || mouse.carryingCheese
+        ? MOUSE_CHEESE_SPEED
+        : MOUSE_SNEAK_SPEED
   const currentSpeed =
     mouse.currentSpeed < target
       ? Math.min(target, mouse.currentSpeed + ACCEL * dt)

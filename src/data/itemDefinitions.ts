@@ -72,6 +72,20 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     consumable: false,
   },
   {
+    id: 'cheese',
+    name: 'Cheese',
+    category: 'food',
+    icon: '🧀',
+    // A smaller snack than kibble — cats can eat it same as any other food,
+    // but it also has a second life: a sneaking mouse (see mouseBehavior.ts)
+    // is drawn to it and, if it gets there first, carries it back to the
+    // mouse hole instead — a cat's claim on it (below) blocks that the same
+    // way a mouse's claim blocks a cat, first come first served.
+    effect: { hunger: 20 },
+    physics: { mass: 0.4, friction: 0.85, bounciness: 0 },
+    consumable: true,
+  },
+  {
     id: 'mouse',
     name: 'Mouse',
     category: 'prey',

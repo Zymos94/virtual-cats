@@ -13,12 +13,18 @@ import type { JumpState } from './pet'
 // each tick.
 export type MouseState = 'sneaking' | 'fleeing' | 'held'
 
+// Cosmetic only, rolled once at spawn — no behavioral difference between
+// the two, same spirit as a cat's furColor allele but without the genetics
+// machinery (mice aren't bred).
+export type MouseColor = 'grey' | 'brown'
+
 export interface Mouse {
   id: string
   position: { x: number; y: number }
   destination: { x: number; y: number } | null
   state: MouseState
   facing: 'left' | 'right'
+  color: MouseColor
   // How many more scares this mouse can shrug off before it gives up on
   // just running away and makes a beeline for the mouse hole instead —
   // rolled once at spawn (2-7). Decremented only on a *fresh* scare (the
@@ -44,4 +50,14 @@ export interface Mouse {
   // The ballistic hop when a cat chucks it out of its jaws. Reuses the
   // same shape as a cat's own jump — see JumpState.
   jump: JumpState | null
+  // A cheese item this (calmly 'sneaking') mouse is heading for — claims it
+  // via the item's own claimedBy, same field a cat's own food-claim uses,
+  // so whichever gets there first blocks the other. Cleared (by scareMouse)
+  // the instant anything scares it — a cheese run is not worth its life.
+  targetCheeseId: string | null
+  // Has picked up a cheese item and is hauling it back to the mouse hole —
+  // see petStore.tick()'s cheese-delivery step. Also cleared by scareMouse;
+  // a scared mouse abandons the cheese rather than trying to keep carrying
+  // it while fleeing.
+  carryingCheese: boolean
 }

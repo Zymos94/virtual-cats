@@ -12,12 +12,20 @@ interface SceneProps {
   mice: Mouse[]
   sceneBounds: { width: number; height: number }
   selectedPetId: string | null
+  mouseHolePeeking: boolean
 }
 
-export function Scene({ pets, placedItems, mice, sceneBounds, selectedPetId }: SceneProps) {
+export function Scene({
+  pets,
+  placedItems,
+  mice,
+  sceneBounds,
+  selectedPetId,
+  mouseHolePeeking,
+}: SceneProps) {
   return (
     <div className="scene">
-      <MouseHoleSprite sceneBounds={sceneBounds} />
+      <MouseHoleSprite sceneBounds={sceneBounds} peeking={mouseHolePeeking} />
       {placedItems.map((item) => (
         <ItemSprite key={item.id} placedItem={item} />
       ))}

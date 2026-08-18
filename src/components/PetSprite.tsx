@@ -219,8 +219,13 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   // amplitude from real speed — so legs reach further and lift higher at a
   // run, and ease to a stop with the cat instead of cutting off. Which
   // gait (walk/trot/slink/gallop/strut) applies comes from the pet's
-  // current action/needs — see selectGait.
-  const gait = selectGait(pet)
+  // current action/needs — see selectGait. Chasing a fleeing mouse gets its
+  // own gallop trigger, which needs the live Mouse (not just pet.targetMouseId)
+  // to know it's actually fleeing, not just sneaking.
+  const targetMouseState = usePetStore((state) =>
+    pet.targetMouseId ? state.mice[pet.targetMouseId]?.state : undefined,
+  )
+  const gait = selectGait(pet, targetMouseState === 'fleeing')
   const speed01 = Math.min(1, pet.currentSpeed / RUN_SPEED)
   const moving01 = Math.min(1, pet.currentSpeed / 30)
   const bob =

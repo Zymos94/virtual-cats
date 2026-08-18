@@ -422,6 +422,76 @@ just happened to be what surfaced the second one.
   eliminating it at every possible step size. Verified the mouse item now converts
   consistently in ~300–500ms of simulated time at 1x, 4x, and 16x alike.
 
+### M21: a hole that comes alive on its own, cheese, and more sound (2026-08-18)
+
+Follow-up feature request on top of the mouse work, four small asks bundled together plus
+a mouth-position fix caught along the way:
+
+- **The mouse hole occasionally acts on its own.** On a random interval
+  (`MOUSEHOLE_PEEK_MIN/MAX_INTERVAL_MS`, 20–50s) two eyes peek out of the hole for
+  `MOUSEHOLE_PEEK_DURATION_MS` (1.4s); `MOUSEHOLE_SPAWN_CHANCE` (40%) of those peeks spawn
+  a fresh mouse right there. Timer state (`mouseHolePeeking`, `mouseHolePeekStartedAt`,
+  `nextMouseHolePeekAt`) lives in the store but isn't persisted — same reasoning as mice
+  themselves, a reload just starts with nothing scheduled yet (0 is a sentinel meaning
+  "schedule from this tick's own `now`" rather than firing instantly on load). Verified
+  deterministically over ~960 simulated seconds: 26 peeks, 14 spawns — close to the 40%
+  target given n=26. `MouseHoleSprite.tsx` draws the peek as two pale eye-shine ellipses
+  with dark pupils, low in the arch.
+- **Some mice are brown.** `Mouse.color` (`'grey' | 'brown'`, `MouseColor` in
+  `src/types/mouse.ts`) rolled once at spawn (`MOUSE_BROWN_CHANCE = 0.3`) — purely
+  cosmetic, `MouseSprite.tsx`'s `COAT_COLORS` map picks the palette.
+- **Cheese**: a new food item (cats eat it same as kibble/cake) that a calmly sneaking
+  mouse is also drawn to within `MOUSE_CHEESE_DETECT_RADIUS` (250px) — claims it via the
+  item's own `claimedBy` (shared with cats' own claim mechanism, so whichever gets there
+  first blocks the other), picks it up on arrival, and hauls it back to the mouse hole at
+  a dedicated `MOUSE_CHEESE_SPEED` (55px/s — a determined trot, between the cautious
+  16px/s sneak and the terrified 145px/s flee) to despawn once delivered. Getting scared
+  mid-run drops the cheese outright — `scareMouse()` clears `targetCheeseId`/
+  `carryingCheese`, and each of its three call sites separately releases the abandoned
+  item's claim (that pure function has no `sceneItems` to touch itself). A carried cheese
+  renders as a tiny wedge at the mouse's nose. Verified end-to-end (seek → claim → pickup
+  → carry → deliver → despawn) and the abandon-mid-run path (claim genuinely released, not
+  left dangling) both via deterministic stepping.
+- **A cat gallops chasing a fleeing mouse.** `selectGait()` (`gaits.ts`) and
+  `targetSpeedFor()` (`movement.ts`) both gained an optional `chasingFleeingMouse`
+  parameter — neither pure function has a `Mouse` to check itself, so each caller (
+  `petStore.tick()`, which has the live mice map; `PetSprite.tsx`, which now reads the
+  targeted mouse's state via its own `usePetStore` selector) resolves the flag from
+  `mice[pet.targetMouseId]?.state === 'fleeing'`. Previously a mouse chase always used the
+  same trot as approaching a toy — a fleeing mouse is genuinely trying to escape, so a real
+  chase now looks (and moves) like the same flat-out gallop zoomies uses.
+- **Sound**: one new asset (`mouse-squeak.mp3`, CC0, sourced via a research subagent
+  following the existing `CREDITS.md` convention) plus three previously-downloaded-but-
+  unused cat assets finally wired up. Squeak plays on every _fresh_ scare (spotted while
+  sneaking, pounced at, chucked, or freshly spawned from a hole peek) — gated the same way
+  `scareMouse()` itself gates a fresh scare, so an ongoing chase doesn't squeak every tick.
+  `cat-growl.mp3` plays on an actual missed pounce (toy or mouse, gated on
+  `pet.action === 'pouncing'` so a plain "walked up and it had already rolled off" doesn't
+  growl). `cat-meow-hungry.mp3` plays the moment a cat freshly targets food while under
+  `gaits.ts`'s own `URGENT_HUNGER` threshold (now exported and reused rather than
+  duplicated). `cat_purrsleepy_loop.wav` starts as a soft loop the instant a cat's action
+  becomes `'sleeping'` (covers both ways it gets there — arriving at a bed, or collapsing
+  from sheer exhaustion) and stops the instant it isn't anymore — including
+  `putPetInSuitcase`, which didn't previously call `stopLoop` at all (a pre-existing gap
+  that would have left a suitcased sleeping cat purring forever; fixed as part of this
+  same pass since it's the same bug class as everything else here).
+- **Found and fixed along the way**: the held-mouse-in-jaws position was never actually at
+  the head. `MOUSE_MOUTH_OFFSET_X/Y` (24, 6) put it near the middle of the body, and — a
+  second, independent bug — even that used a plain `dirX` sign flip for facing, the wrong
+  correction for a CSS-mirrored sprite (same class of bug the tail anchor already has a
+  documented fix for). Derived the right local coordinates from `PetSprite.tsx`'s actual
+  head polygon (`42,34 50,12 66,12 74,34`) and eye geometry (`EYE_XS`/`EYE_Y`), landing on
+  `MOUSE_MOUTH_LOCAL_X/Y = 70, 27`, and mirrored it the same way the gaze-target code
+  already does (`SVG_WIDTH - x` for facing left, not `-x`). Also fixed the chuck hop
+  starting from `pet.position` instead of the mouse's actual last-tracked mouth position,
+  which would visibly snap it there for one frame before the throw. Verified visually at
+  both facings.
+- Verified the whole bundle together, not just individually: a combined scenario (three
+  cats, cheese in the room, mousehole spawning organically) ran ~640 simulated seconds
+  with no errors, no `NaN` positions, and a plausible natural mix of every new and
+  existing sound firing. New/updated tests: `gaits.test.ts` (3 new), `movement.test.ts` (1
+  new), `mouseMovement.test.ts` (1 new).
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

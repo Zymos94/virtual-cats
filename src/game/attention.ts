@@ -13,7 +13,8 @@ export interface AttentionTarget {
 
 // Which need a given category of item addresses — grooming and the
 // litter box both land on hygiene, everything else gets its own. 'prey'
-// and 'hole' never reach here — see itemUrgency below.
+// never reaches here — see itemUrgency below. (The mouse hole isn't an
+// item at all — see roomLayout.ts's getMouseHolePosition.)
 function needKeyForCategory(category: ItemCategory): keyof Needs {
   switch (category) {
     case 'food':

@@ -1,9 +1,9 @@
 import type { Mouse } from '../types/mouse'
 
 // Deliberately tiny and simple — a background creature, not a second cat:
-// one grey oval body, a thin curved tail, two small circle feet, a pink
-// button nose, two dot eyes. No jointed legs — the "scurry" is a squash/
-// wiggle on the whole body, not a gait.
+// one oval body (grey or brown, see COAT_COLORS), a thin curved tail, two
+// small circle feet, a pink button nose, two dot eyes. No jointed legs —
+// the "scurry" is a squash/wiggle on the whole body, not a gait.
 const SVG_WIDTH = 22
 const SVG_HEIGHT = 16
 
@@ -12,8 +12,16 @@ const SVG_HEIGHT = 16
 // this component decoupled from the exact tuning constant).
 const FULL_WIGGLE_SPEED = 145
 
+// Same fill/stroke contrast ratio as the grey palette, just shifted warm —
+// body a touch lighter than its outline, tail/feet matching the outline.
+const COAT_COLORS = {
+  grey: { body: '#aca297', outline: '#7d746b', limbs: '#8a8078' },
+  brown: { body: '#9c6b3e', outline: '#6e4a29', limbs: '#7a5330' },
+} as const
+
 export function MouseSprite({ mouse }: { mouse: Mouse }) {
   const facingLeft = mouse.facing === 'left'
+  const coat = COAT_COLORS[mouse.color]
   const speed01 = Math.min(1, mouse.currentSpeed / FULL_WIGGLE_SPEED)
   // A slow idle wiggle even at a standstill (0.4 baseline), livelier the
   // faster it's actually moving.
@@ -37,7 +45,7 @@ export function MouseSprite({ mouse }: { mouse: Mouse }) {
         <path
           d={`M 3 8 Q -3 ${8 - wiggle * 1.5} -8 ${6 - wiggle * 2}`}
           fill="none"
-          stroke="#8a8078"
+          stroke={coat.limbs}
           strokeWidth={1.1}
           strokeLinecap="round"
         />
@@ -50,16 +58,16 @@ export function MouseSprite({ mouse }: { mouse: Mouse }) {
         >
           {/* Small circle feet, just peeking out from under the body — no
               joints, no gait, purely decorative. */}
-          <circle cx={7} cy={12.2} r={1.5} fill="#8a8078" />
-          <circle cx={15} cy={12.2} r={1.5} fill="#8a8078" />
+          <circle cx={7} cy={12.2} r={1.5} fill={coat.limbs} />
+          <circle cx={15} cy={12.2} r={1.5} fill={coat.limbs} />
 
           <ellipse
             cx={11}
             cy={8}
             rx={9.5}
             ry={5.5}
-            fill="#aca297"
-            stroke="#7d746b"
+            fill={coat.body}
+            stroke={coat.outline}
             strokeWidth={1}
           />
 
@@ -69,6 +77,20 @@ export function MouseSprite({ mouse }: { mouse: Mouse }) {
           {/* Dot eyes. */}
           <circle cx={15.5} cy={5.8} r={0.9} fill="#2b2620" />
           <circle cx={12.5} cy={5.2} r={0.9} fill="#2b2620" />
+
+          {/* A tiny cheese wedge held right at the nose while hauling it
+              back to the hole — see petStore.tick()'s cheese-delivery step. */}
+          {mouse.carryingCheese && (
+            <g>
+              <path
+                d="M 22 6.5 L 27 8 L 22 10 Z"
+                fill="#f0c84a"
+                stroke="#c99a2e"
+                strokeWidth={0.5}
+              />
+              <circle cx={24} cy={8} r={0.5} fill="#c99a2e" />
+            </g>
+          )}
         </g>
       </svg>
     </div>

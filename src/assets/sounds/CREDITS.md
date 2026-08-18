@@ -14,5 +14,6 @@
 | cat-growl.mp3           | [BigSoundBank: Joseph Sardin](https://bigsoundbank.com/growling-cat-2-s1886.html)       | CC0           | No (credit appreciated)                                         |
 | cat-chirp.mp3           | [Freesound: dreamstobecome](https://freesound.org/people/dreamstobecome/sounds/451250/) | CC0           | No                                                              |
 | cat-hiss.mp3            | [Freesound: AUDACITIER](https://freesound.org/people/AUDACITIER/sounds/634665/)         | **CC BY 4.0** | **Yes — credit "AUDACITIER", link to the Freesound page above** |
+| mouse-squeak.mp3        | [Freesound: semccab](https://freesound.org/people/semccab/sounds/154381/)               | CC0           | No                                                              |
 
 All files downloaded as Freesound's "HQ preview" MP3 (128kbps) rather than the original upload, since Freesound requires a login to fetch the original file — fine quality for short game sound effects.

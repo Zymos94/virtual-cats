@@ -90,6 +90,23 @@ A planned slice split (`ARCHITECTURE.md` Phase 8) will divide this into cooperat
 — **update this section when that lands.** `src/game/behaviorFSM.ts` stays a pure function
 `(pet, context) → pet`; all mutation and cross-entity effects live centrally in `tick()`.
 
+The mouse hole also occasionally acts on its own, independent of any cat/mouse in the room: on a
+random interval (`MOUSEHOLE_PEEK_*` constants) two eyes peek out (`mouseHolePeeking` — not
+persisted, see Save schema), and a fraction of those peeks (`MOUSEHOLE_SPAWN_CHANCE`) spawn a fresh
+`Mouse` right there. Each mouse also gets a cosmetic `color` (`'grey' | 'brown'`, `MouseColor` in
+`src/types/mouse.ts`) rolled once at spawn — purely visual, no behavioral difference.
+
+A calmly `'sneaking'` mouse (not fleeing/held) is drawn to any unclaimed `'cheese'` item within
+`MOUSE_CHEESE_DETECT_RADIUS`, claims it via the item's own `claimedBy` (the same field a cat's own
+food-claim uses — whichever gets there first blocks the other), picks it up on arrival (deletes the
+`PlacedItem`, sets `Mouse.carryingCheese`), and hauls it back to the mouse hole to despawn — goal
+met, same as an escaped fleeing mouse. `scareMouse()` drops `targetCheeseId`/`carryingCheese`
+outright on any scare (a cheese run isn't worth its life); the caller is responsible for releasing
+the item's claim, since that pure function has no `sceneItems` to touch. A cat actively chasing a
+mouse that's `'fleeing'` (not just sneaking) gallops — `selectGait()` (`src/game/gaits.ts`) and
+`targetSpeedFor()` (`src/game/movement.ts`) both take an optional `chasingFleeingMouse` flag the
+caller resolves from the live `Mouse`, since neither pure function has mouse data of its own.
+
 ## Save schema
 
 **Current: no versioning.** `src/store/persist.ts` is a thin `localStorage` wrapper — a flat JSON

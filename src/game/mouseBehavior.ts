@@ -98,6 +98,12 @@ export function scareMouse(
     destination: panicked
       ? holePosition
       : pickSneakPoint(sceneBounds, topMargin, mouse.position, threatPosition),
+    // A cheese run isn't worth its life — dropped/abandoned outright rather
+    // than trying to keep carrying it while fleeing. The item's own claim
+    // (if any) is released by the caller, which has the sceneItems this
+    // pure function doesn't.
+    targetCheeseId: null,
+    carryingCheese: false,
   }
 }
 

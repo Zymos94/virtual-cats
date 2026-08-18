@@ -64,6 +64,24 @@ describe('movePet gaits', () => {
     expect(pet.currentSpeed).toBeGreaterThan(150)
   })
 
+  it('runs flat-out chasing a mouse that is actually fleeing, not just trotting', () => {
+    let trotter = makePet({
+      action: 'walking',
+      destination: { x: 3000, y: 300 },
+      targetMouseId: 'mouse-1',
+    })
+    let sprinter = makePet({
+      action: 'walking',
+      destination: { x: 3000, y: 300 },
+      targetMouseId: 'mouse-1',
+    })
+    for (let i = 0; i < 200; i++) {
+      trotter = movePet(trotter, 16, false)
+      sprinter = movePet(sprinter, 16, true)
+    }
+    expect(sprinter.currentSpeed).toBeGreaterThan(trotter.currentSpeed * 1.5)
+  })
+
   it('actually creeps toward its destination while stalking', () => {
     let pet = makePet({
       action: 'stalking',
