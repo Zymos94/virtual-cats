@@ -1,0 +1,5 @@
+# Commits here are skipped by `git blame` (configure once per clone with:
+# git config blame.ignoreRevsFile .git-blame-ignore-revs)
+
+# Phase 2: one-time Prettier reformat, whitespace/quotes/wrapping only
+e7590dd3f4c5877ca65ec0fa5a144014b886fc65

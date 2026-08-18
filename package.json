@@ -11,7 +11,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "dependencies": {
     "nanoid": "^6.0.1",
@@ -24,6 +25,8 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "oxlint": "^1.75.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.2",
