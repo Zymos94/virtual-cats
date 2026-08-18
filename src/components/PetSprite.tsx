@@ -8,6 +8,7 @@ import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
 import { getLifeStage, getLifeStageScale } from '../game/lifeStage'
 import { RUN_SPEED } from '../game/movement'
 import { computeLegPoses, type LegPose } from '../game/catPose'
+import { selectGait } from '../game/gaits'
 import { playSound } from '../game/sound'
 
 interface PetSpriteProps {
@@ -145,7 +146,11 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     pupilX: 0,
     pupilY: 0,
     tilt: 0,
+    hold: 0,
+    holdSwingAmount: 0,
+    holdTilt: 0,
     lastNow: performance.now(),
+    lastPos: { x: pet.position.x, y: pet.position.y },
   })
   const eased = easeRef.current
   const now = performance.now()
@@ -153,10 +158,31 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   eased.lastNow = now
   const ease = (current: number, target: number, rate: number) =>
     current + (target - current) * Math.min(1, dt * rate)
+  const hash = petHash(pet.id)
 
   eased.sit = ease(eased.sit, pet.action === 'sitting' ? 1 : 0, 6)
   eased.lie = ease(eased.lie, pet.action === 'sleeping' ? 1 : 0, 5)
   const { sit, lie } = eased
+
+  // Held by the scruff: track how fast the cat is actually being dragged
+  // right now (position delta between renders) and feed it into a swing
+  // that lags behind the motion, like a real dangle. Purely cosmetic —
+  // the sim only knows the discrete 'held' action, not a velocity.
+  const heldNow = pet.action === 'held'
+  const vx = dt > 0 ? (pet.position.x - eased.lastPos.x) / dt : 0
+  const vy = dt > 0 ? (pet.position.y - eased.lastPos.y) / dt : 0
+  eased.lastPos = { x: pet.position.x, y: pet.position.y }
+  eased.hold = ease(eased.hold, heldNow ? 1 : 0, 7)
+  eased.holdSwingAmount = ease(
+    eased.holdSwingAmount,
+    heldNow ? clamp(Math.hypot(vx, vy) / 220, 0, 1.4) : 0,
+    5,
+  )
+  eased.holdTilt = ease(eased.holdTilt, heldNow ? clamp(vx / 12, -18, 18) : 0, 6)
+  const holdSwingPhase = now / 260 + hash
+  // A faint idle sway even when the pointer holds still, so the dangle
+  // never looks perfectly frozen — same desync trick as blinking/gaze.
+  const holdTiltDeg = eased.hold * (eased.holdTilt + Math.sin(now / 900 + hash) * 2.5)
 
   const { body, stroke, eye, scale: geneticScale, spotted } = deriveAppearance(pet.genetics)
   const scale = geneticScale * getLifeStageScale(getLifeStage(pet.ageMs))
@@ -184,19 +210,22 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
   const legs = computeLegPoses({
     stridePhase: pet.stridePhase,
+    gait: selectGait(pet),
     speed01,
     moving01,
     sit,
     lie,
     hop,
     bob,
+    hold: eased.hold,
+    holdSwingPhase,
+    holdSwingAmount: eased.holdSwingAmount,
   })
 
   // Gaze: eyes track a resolved target — pupils inside the eye, the eyes
   // themselves sliding across the face (a fake head-turn that reads as
   // depth), and the head tilting vertically toward it. All in the sprite's
   // right-facing local frame; the svg's CSS mirror maps it for left.
-  const hash = petHash(pet.id)
   const gaze = resolveGazeWorld(pet)
   let gazeDx: number
   let gazeDy: number
@@ -328,7 +357,17 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
           opacity={0.14 * (1 - hop * 0.5)}
         />
 
-        <g style={{ transform: `translateY(${-hopPx}px)` }}>
+        <g
+          style={{
+            // Held: the whole cat swings like a pendulum from a pivot near
+            // the neck (where a hand would grip the scruff) — everything
+            // near that point (the head) barely moves, everything far from
+            // it (hips, legs, tail) swings the most, for free, just from
+            // where the rotation is anchored.
+            transform: `translateY(${-hopPx + eased.hold * 3}px) rotate(${holdTiltDeg}deg)`,
+            transformOrigin: '46px 22px',
+          }}
+        >
           <g>
             {tailLocal.map((seg, i) => (
               <circle

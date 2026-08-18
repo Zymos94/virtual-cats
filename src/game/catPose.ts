@@ -1,7 +1,9 @@
 // Procedural pose math for the shape-built cat: two-bone jointed legs
 // (hip → knee → foot, solved by IK each frame) plus the blend weights for
-// sitting, lying, and mid-hop poses. Pure geometry — PetSprite feeds it
-// the pet's live motion values and draws whatever comes back.
+// sitting, lying, held, and mid-hop poses. Pure geometry — PetSprite feeds
+// it the pet's live motion values and draws whatever comes back.
+
+import { footOffset, type GaitDef } from './gaits'
 
 export interface Point {
   x: number
@@ -99,6 +101,10 @@ function lerp(a: number, b: number, t: number): number {
 
 export interface PoseInput {
   stridePhase: number
+  // Which gait's footfall timing (leg phase offsets + duty factor) to use
+  // — see gaits.ts. Determines *when* each foot lifts and plants; speed01
+  // below scales *how far and how high*.
+  gait: GaitDef
   // Actual speed normalized against the top (run) speed, 0..1 — scales
   // stride length and foot lift so a run reaches further than an amble.
   speed01: number
@@ -111,22 +117,37 @@ export interface PoseInput {
   // Vertical body bounce from the gait, applied to hips so planted feet
   // absorb it through the knees rather than sliding.
   bob: number
+  // Held/scruff-dangle blend, 0..1 — see the block below. Overrides the
+  // gait cycle entirely rather than blending with it, since a cat isn't
+  // simultaneously walking and being carried.
+  hold: number
+  // Time-based pendulum phase for the dangle's idle swing (cosmetic,
+  // computed in PetSprite so it can desync per cat — see petHash there).
+  holdSwingPhase: number
+  // 0..1(+) eased magnitude of the dangle swing, driven by how fast the
+  // cat is currently being carried (PetSprite tracks drag velocity; this
+  // module stays pure and just receives the already-eased result).
+  holdSwingAmount: number
 }
 
 export function computeLegPoses(input: PoseInput): LegPose[] {
   const strideAmp = 3 + 5 * input.speed01
   const liftAmp = 2.5 + 3.5 * input.speed01
 
-  return LEGS.map((leg) => {
+  return LEGS.map((leg, i) => {
     const hip = { x: leg.hip.x, y: leg.hip.y + input.bob }
-
-    const phase = input.stridePhase + leg.phaseOffset
     const restX = hip.x + leg.restOffset
-    const cycleX = restX + Math.cos(phase) * strideAmp
-    const cycleLift = Math.max(0, Math.sin(phase)) * liftAmp
+
+    const { dx, dy } = footOffset(
+      input.stridePhase,
+      input.gait.legPhase[i],
+      input.gait.dutyFactor,
+      strideAmp,
+      liftAmp,
+    )
     let foot = {
-      x: lerp(restX, cycleX, input.moving01),
-      y: GROUND_Y - cycleLift * input.moving01,
+      x: lerp(restX, restX + dx, input.moving01),
+      y: lerp(GROUND_Y, GROUND_Y + dy, input.moving01),
     }
 
     // Mid-hop: legs leave the cycle and stretch into the leap — front
@@ -145,6 +166,24 @@ export function computeLegPoses(input: PoseInput): LegPose[] {
     if (!leg.isFront && input.sit > 0) {
       foot = { x: lerp(foot.x, hip.x + 4, input.sit), y: lerp(foot.y, GROUND_Y, input.sit) }
       opacity *= 1 - input.sit * 0.85
+    }
+
+    // Held by the scruff: legs go loose and hang from the hip instead of
+    // cycling — shorter than a standing leg's full reach to the ground
+    // (leg.upper + leg.lower would overshoot it), reading as relaxed and
+    // unweighted rather than tiptoeing on the floor — swinging gently on a
+    // lag behind however fast the cat is being carried right now. Hind
+    // legs swing a touch looser than front, and each leg's phaseOffset
+    // gives a slight stagger so all four don't swing in lockstep like a
+    // single rigid rod.
+    if (input.hold > 0) {
+      const legLooseness = leg.isFront ? 0.85 : 1.15
+      const swing =
+        Math.sin(input.holdSwingPhase + leg.phaseOffset * 0.2) *
+        (2.5 + 5 * input.holdSwingAmount) *
+        legLooseness
+      const dangle = { x: hip.x + swing, y: hip.y + (leg.isFront ? 8 : 10) }
+      foot = { x: lerp(foot.x, dangle.x, input.hold), y: lerp(foot.y, dangle.y, input.hold) }
     }
 
     return {

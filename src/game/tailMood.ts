@@ -9,6 +9,10 @@ import { SVG_WIDTH } from './spriteConstants'
 export type TailMood = 'content' | 'neutral' | 'agitated' | 'social'
 
 export function getTailMood(pet: Pet): TailMood {
+  // Held by the scruff: no deliberate swing, just gravity and drag lag —
+  // takes priority over the needs-based checks below so a hungry cat
+  // being carried doesn't flick its tail mid-air.
+  if (pet.action === 'held') return 'neutral'
   if (pet.action === 'petting') return 'content'
   if (pet.action === 'playing' && pet.targetPetId) return 'social'
   if (pet.action === 'playing') return 'agitated'
@@ -79,8 +83,11 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   // The rear end drops when seated (haunches on the ground) and further
   // when lying asleep — the tail attach point follows it down so the chain
   // rests on the floor beside the cat instead of floating mid-air. The
-  // chain's own easing carries the segments there smoothly.
-  const postureDrop = pet.action === 'sitting' ? 20 : pet.action === 'sleeping' ? 24 : 0
+  // chain's own easing carries the segments there smoothly. Held is the
+  // same idea for a different reason: gravity, not a resting haunch, pulls
+  // the tail down and loose while the cat dangles.
+  const postureDrop =
+    pet.action === 'sitting' ? 20 : pet.action === 'sleeping' ? 24 : pet.action === 'held' ? 22 : 0
   return {
     x: x + swing.x,
     y:
