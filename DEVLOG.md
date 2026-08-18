@@ -492,6 +492,80 @@ a mouth-position fix caught along the way:
   existing sound firing. New/updated tests: `gaits.test.ts` (3 new), `movement.test.ts` (1
   new), `mouseMovement.test.ts` (1 new).
 
+### M22: a real tail fix, a mousehole timing bug, and a face (2026-08-18)
+
+Follow-up feedback on M21: the mousehole was spawning a mouse the instant the eyes
+appeared instead of when they withdrew, and — much bigger — "the tails are quite screwed
+up... take a step back and think about how they're designed for every animation state."
+The legs never disconnect from the body; the tail regularly did. This entry is mostly
+that investigation.
+
+- **Mousehole timing**: simple fix — the `MOUSEHOLE_SPAWN_CHANCE` roll moved from the
+  branch that starts a peek to the branch that ends one (`petStore.tick()`), so a mouse
+  now only ever appears as the eyes withdraw, never the instant they show up. Verified
+  deterministically over several peek cycles: mouse count only ever increments on the
+  `peeking: true → false` transition.
+- **The tail redesign.** Read every cosmetic transform PetSprite.tsx applies to the body
+  across every action state, then compared it against what `tailMood.ts`'s
+  `getTailAnchorLocal` was actually approximating. Found three distinct, compounding
+  bugs, all pre-existing (not introduced by M20/M21's own tail-anchor work, which had
+  only ever fixed the _static_ gait-height term):
+  1. **Missing the actual per-stride bounce.** The anchor replicated
+     `gait.bodyHeight * moving01` (a static per-gait constant) but never the _oscillating_
+     `bob` term (`-Math.abs(Math.sin(stridePhase)) * ... * gait.bounceMul`) that dominates
+     the body's real on-screen bounce during any movement — especially gallop, whose
+     `bounceMul` (1.7) is well above trot's (1.0). Since every input to that formula
+     (stridePhase, currentSpeed, gait) already lives on the Pet object, it's now
+     replicated exactly rather than approximated, gated on the _same_ `chasingFleeingMouse`
+     flag PetSprite.tsx's own `selectGait` call uses (threaded through
+     `getTailAnchorLocal`'s new third parameter) so the two never pick different gaits.
+  2. **Instant pose snaps.** Seated/sleeping/held/stretching each added a hard, instant
+     Y-offset (`postureDrop`) the moment `pet.action` changed, while the body's own
+     crossfade into that pose (`eased.sit`/`lie`/`stretchIdle`/`hold` in PetSprite.tsx)
+     takes a few hundred ms to fade in — so for that whole window the tail sat at a
+     height belonging to a pose the body hadn't finished becoming. Replaced with a
+     `rampIn()` helper using the action's own `now - actionStartedAt`, tuned close to
+     (not required to exactly match) the component's own easing rate.
+  3. **The seated tail was invisible.** Once ramped in, the old seated drop (20) and
+     wrap-curl (7) landed the resting tail dead center inside the seated silhouette's own
+     haunch circle (`cx=27 cy=44 r=10` in PetSprite.tsx) — which is drawn _after_ (on top
+     of) the tail, so it was just gone, not misplaced. Bumped to 30/12, clearing the
+     haunch entirely.
+  4. **A latent `stepChain` fixed point, found while verifying the above.** A perfectly
+     vertical line of segments under a _perfectly still_ anchor (mood `'neutral'` — e.g. a
+     sitting cat — deliberately gives zero swing) is an exact fixed point of the chain
+     physics: easing a segment toward a target directly above/below it, then
+     re-constraining to exactly `linkLength` along that same line, exactly reproduces the
+     segment's own position, forever. `initialSegments` (`tailPhysics.ts`) built exactly
+     that shape — worse, segment 0 landed exactly _on_ the anchor (zero distance, a second,
+     even more degenerate fixed point of the same kind). A freshly-created tail (new
+     game, bred kitten, mouse's first pounce target) whose cat then sat and held still
+     could stay a rigid, glued-to-the-body straight rod indefinitely, since nothing ever
+     perturbed it off either fixed point. Fixed by seeding every segment (including the
+     first) one full link further out along a gently curved path
+     (`Math.sin((i+1)*0.6)`), which can never land exactly on a fixed point by
+     construction. New `tailPhysics.test.ts` pins this down directly (segments must move
+     off-axis under a static anchor; the "stays a straight rod" case existed for the
+     _entire_ previous milestone without a test catching it).
+  - Verified all four fixes with actual screenshots (not just the numbers) across idle,
+    walking, galloping (both zoomies and a mouse chase), slinking, sitting, sleeping,
+    stretching, grooming, held, and holding a mouse — the tail stayed visibly attached in
+    every one. One residual, lower-priority finding: a tail's resting _curl shape_ is
+    inherently path-dependent (an emergent property of chain-follow physics, not
+    something a fixed anchor constant fully controls), so an unusual rapid sequence of
+    action changes can occasionally settle the curl somewhere that ducks behind the body
+    silhouette — confirmed this clears up starting from a fresh state, not chased further.
+- **A face.** Added a nose (pink or black, a stable per-cat hash pick — no genetic
+  inheritance, unlike fur), a 3-line whisker fan off the muzzle, and a mouth with three
+  shapes: an upside-down-Y by default, an "O" while eating or (briefly, ~350ms) right
+  after a click-select meow, and a "P" (a short stem plus a small tongue-tip loop) timed
+  to the same `groomPhase` sine that already drives a flank-lick's head-dip, so the
+  tongue flicks in time with the lick rather than on its own separate clock. The O-on-meow
+  is necessarily approximate: PetSprite.tsx only has direct visibility into the
+  click-select sound it triggers itself (`onPointerDown`'s `onUp` handler) — the
+  hungry-meow/hiss/growl triggers all live store-side in `petStore.ts`, which has no
+  channel back to a specific render-only mouth shape.
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

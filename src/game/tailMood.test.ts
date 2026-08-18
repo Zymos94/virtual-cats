@@ -38,49 +38,71 @@ function makePet(overrides: Partial<Pet> = {}): Pet {
 
 // Only the seated-posture/tail-wrap logic added for grooming/stretching/
 // kneading is covered here — getTailMood's broader mood table predates
-// this session and isn't re-tested from scratch.
-describe('getTailAnchorLocal — seated posture', () => {
+// this session and isn't re-tested from scratch. Every posture below ramps
+// in over POSE_TRANSITION_MS/SLEEP_TRANSITION_MS (see tailMood.ts) rather
+// than snapping instantly, so most samples here are taken well past that
+// (1000ms) to check the settled state — the ramp itself is covered
+// separately below.
+describe('getTailAnchorLocal — seated posture (settled)', () => {
   it('drops the tail the same way for sitting, grooming, and kneading', () => {
-    const sitting = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 0)
-    const grooming = getTailAnchorLocal(makePet({ action: 'grooming', actionStartedAt: 0 }), 0)
-    const kneading = getTailAnchorLocal(makePet({ action: 'kneading', actionStartedAt: 0 }), 0)
+    const sitting = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 1000)
+    const grooming = getTailAnchorLocal(makePet({ action: 'grooming', actionStartedAt: 0 }), 1000)
+    const kneading = getTailAnchorLocal(makePet({ action: 'kneading', actionStartedAt: 0 }), 1000)
     expect(grooming.y).toBeCloseTo(sitting.y, 5)
     expect(kneading.y).toBeCloseTo(sitting.y, 5)
   })
 
   it('does not drop the tail for plain idle', () => {
-    const idle = getTailAnchorLocal(makePet({ action: 'idle' }), 0)
-    const sitting = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 0)
+    const idle = getTailAnchorLocal(makePet({ action: 'idle' }), 1000)
+    const sitting = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 1000)
     expect(idle.y).toBeLessThan(sitting.y)
   })
 })
 
-describe('getTailAnchorLocal — tail-wrap curl', () => {
-  it('has no curl the instant a cat sits down', () => {
+describe('getTailAnchorLocal — posture and curl ramp in, not snap', () => {
+  it('has no drop or curl the instant a cat sits down', () => {
     const atSitDown = getTailAnchorLocal(
       makePet({ action: 'sitting', actionStartedAt: 1000 }),
       1000,
     )
     const stillIdle = getTailAnchorLocal(makePet({ action: 'idle' }), 1000)
     expect(atSitDown.x).toBe(stillIdle.x)
+    expect(atSitDown.y).toBe(stillIdle.y)
   })
 
-  it('ramps the curl in over the first 1.2s of sitting, then holds', () => {
+  it('ramps the seated drop and curl in gradually, then holds', () => {
     const pet = makePet({ action: 'sitting', actionStartedAt: 0 })
-    const start = getTailAnchorLocal(pet, 0).x
-    const early = getTailAnchorLocal(pet, 200).x
-    const mid = getTailAnchorLocal(pet, 600).x
-    const settled = getTailAnchorLocal(pet, 1200).x
-    const wellPast = getTailAnchorLocal(pet, 5000).x
-    expect(early).toBeGreaterThan(start)
-    expect(mid).toBeGreaterThan(early)
-    expect(settled).toBeGreaterThan(mid)
-    expect(wellPast).toBeCloseTo(settled, 5) // capped, doesn't keep growing
+    const start = getTailAnchorLocal(pet, 0)
+    const early = getTailAnchorLocal(pet, 80)
+    const mid = getTailAnchorLocal(pet, 200)
+    const settled = getTailAnchorLocal(pet, 350)
+    const wellPast = getTailAnchorLocal(pet, 5000)
+    expect(early.x).toBeGreaterThan(start.x)
+    expect(mid.x).toBeGreaterThan(early.x)
+    expect(settled.x).toBeGreaterThan(mid.x)
+    expect(wellPast.x).toBeCloseTo(settled.x, 5) // capped, doesn't keep growing
+    expect(early.y).toBeGreaterThan(start.y)
+    expect(mid.y).toBeGreaterThan(early.y)
+    expect(settled.y).toBeGreaterThan(mid.y)
+    expect(wellPast.y).toBeCloseTo(settled.y, 5)
   })
 
-  it('never curls a cat that never sits down', () => {
+  it('never curls or drops a cat that never sits down', () => {
     const pet = makePet({ action: 'idle', actionStartedAt: 0 })
     expect(getTailAnchorLocal(pet, 5000).x).toBe(getTailAnchorLocal(pet, 0).x)
+    expect(getTailAnchorLocal(pet, 5000).y).toBe(getTailAnchorLocal(pet, 0).y)
+  })
+
+  it('settles into sleeping a bit slower than sitting, matching the bigger pose change', () => {
+    const sitter = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 350)
+    const sitterStill = getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0 }), 0)
+    const sleeper = getTailAnchorLocal(makePet({ action: 'sleeping', actionStartedAt: 0 }), 350)
+    const sleeperStill = getTailAnchorLocal(makePet({ action: 'sleeping', actionStartedAt: 0 }), 0)
+    // Sitting is fully ramped in by 350ms (its own transition length);
+    // sleeping (a longer ramp) is only partway there at the same instant.
+    expect(sitter.y - sitterStill.y).toBeCloseTo(30, 0)
+    expect(sleeper.y - sleeperStill.y).toBeLessThan(24)
+    expect(sleeper.y - sleeperStill.y).toBeGreaterThan(0)
   })
 
   it('applies the same unflipped local curl regardless of facing', () => {
@@ -88,11 +110,11 @@ describe('getTailAnchorLocal — tail-wrap curl', () => {
     // for why a directional push and a position correction mirror
     // oppositely. This pins that choice down so it can't silently flip.
     const rightDelta =
-      getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0, facing: 'right' }), 1200)
-        .x - getTailAnchorLocal(makePet({ action: 'idle', facing: 'right' }), 1200).x
+      getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0, facing: 'right' }), 1000)
+        .x - getTailAnchorLocal(makePet({ action: 'idle', facing: 'right' }), 1000).x
     const leftDelta =
-      getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0, facing: 'left' }), 1200)
-        .x - getTailAnchorLocal(makePet({ action: 'idle', facing: 'left' }), 1200).x
+      getTailAnchorLocal(makePet({ action: 'sitting', actionStartedAt: 0, facing: 'left' }), 1000)
+        .x - getTailAnchorLocal(makePet({ action: 'idle', facing: 'left' }), 1000).x
     expect(rightDelta).toBeCloseTo(leftDelta, 5)
   })
 })
@@ -103,8 +125,11 @@ describe('getTailAnchorLocal — tail-wrap curl', () => {
 // the body in poses added after the anchor was originally tuned.
 describe('getTailAnchorLocal — tracks the body it is actually attached to', () => {
   it('raises the tail for a stretch, where the rump silhouette sits well above standing', () => {
-    const standing = getTailAnchorLocal(makePet({ action: 'idle' }), 0)
-    const stretching = getTailAnchorLocal(makePet({ action: 'stretching' }), 0)
+    const standing = getTailAnchorLocal(makePet({ action: 'idle' }), 1000)
+    const stretching = getTailAnchorLocal(
+      makePet({ action: 'stretching', actionStartedAt: 0 }),
+      1000,
+    )
     expect(stretching.y).toBeLessThan(standing.y)
   })
 
@@ -116,5 +141,45 @@ describe('getTailAnchorLocal — tracks the body it is actually attached to', ()
     // samples are 'stalking' so tailCarriage/mood are held constant,
     // isolating just the gait-height contribution.
     expect(slinking.y).toBeGreaterThan(standingStill.y)
+  })
+
+  it('follows the same per-stride bounce the body actually renders, not just the gait height', () => {
+    // Two otherwise-identical moving cats, differing only in stridePhase —
+    // isolates the oscillating `bob` term (tied to stridePhase) from the
+    // static gait.bodyHeight term (which wouldn't differ between them).
+    const trough = getTailAnchorLocal(
+      makePet({ action: 'walking', currentSpeed: 60, stridePhase: Math.PI / 2 }),
+      0,
+    )
+    const crest = getTailAnchorLocal(
+      makePet({ action: 'walking', currentSpeed: 60, stridePhase: 0 }),
+      0,
+    )
+    expect(trough.y).not.toBeCloseTo(crest.y, 0)
+  })
+
+  it('gallops with a bigger bounce than a trot toward the same wanted item', () => {
+    const trotting = getTailAnchorLocal(
+      makePet({
+        action: 'walking',
+        targetItemId: 'ball-1',
+        currentSpeed: 100,
+        stridePhase: Math.PI / 2,
+      }),
+      0,
+      false,
+    )
+    const galloping = getTailAnchorLocal(
+      makePet({
+        action: 'walking',
+        targetMouseId: 'mouse-1',
+        currentSpeed: 100,
+        stridePhase: Math.PI / 2,
+      }),
+      0,
+      true, // chasingFleeingMouse -> GALLOP, bounceMul 1.7 vs TROT's 1.0
+    )
+    const standing = getTailAnchorLocal(makePet({ action: 'idle', currentSpeed: 100 }), 0)
+    expect(Math.abs(galloping.y - standing.y)).toBeGreaterThan(Math.abs(trotting.y - standing.y))
   })
 })

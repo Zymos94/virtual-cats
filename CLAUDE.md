@@ -139,7 +139,13 @@ than duplicating the math.
 - `src/game/movement.ts` — destination-seeking movement, gait speed targets, stride phase.
 - `src/game/attention.ts` — unified item/cat scoring (urgency × proximity).
 - `src/game/itemPhysics.ts` — gravity/height axis + ground bounce/friction for placed items.
-- `src/game/tailPhysics.ts` / `tailMood.ts` — chain-follow tail physics, mood-driven anchor.
+- `src/game/tailPhysics.ts` / `tailMood.ts` — chain-follow tail physics, mood-driven anchor. The
+  anchor `getTailAnchorLocal` computes must track the body's _actual_ rendered position — it
+  replicates PetSprite.tsx's own per-stride `bob`/`bodyBob` formula exactly (same Pet-object
+  inputs, must stay byte-for-byte in sync) and ramps seated/sleeping/held/stretching offsets in
+  over the pose's own elapsed time rather than snapping, matching how long the body's own eased
+  crossfade takes to fade in. A mismatch here is the single most common cause of the tail visibly
+  disconnecting from the body — see the M22 postmortem in DEVLOG.md before touching this again.
 - `src/game/catPose.ts` — procedural leg IK + pose blend weights (sit/lie/hop).
 - `src/game/gaits.ts` — gait timing/footfall engine (walk/trot/slink/gallop/strut) + body/head/tail
   posture per gait.
@@ -228,7 +234,16 @@ section with the live URL once deployed.**
   forcing a pet's `action` directly via `setState` (bypassing the FSM), not reachable through any
   normal FSM-driven transition (idle → stretching → walking stayed stable over 200 ticks). Worth
   revisiting if a future feature ever teleports a pet or swaps its action outside the FSM (e.g. a
-  save/load edge case).
+  save/load edge case). Related, and actually fixed (M22): a segment landing _exactly_ on its
+  anchor, or a chain perfectly collinear with a perfectly still anchor, are both genuine fixed
+  points of this same algorithm (not numerically unstable, just permanently stuck) —
+  `initialSegments` no longer seeds either shape.
+- A settled tail's resting _curl_ (as opposed to its attach point, which `getTailAnchorLocal`
+  actively tracks) is inherently path-dependent — an emergent property of the chain-follow physics'
+  history, not something a fixed anchor offset fully controls. An unusual rapid sequence of action
+  changes can occasionally leave the curl ducked behind the seated silhouette's chest/haunch shapes
+  (both drawn _after_, i.e. on top of, the tail). Confirmed this clears up starting from a fresh
+  state; not chased further — see the M22 postmortem in DEVLOG.md.
 
 ## Related docs
 

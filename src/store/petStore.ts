@@ -520,6 +520,14 @@ export const usePetStore = create<PetStore>((set) => ({
       let nextMouseHolePeekAt = state.nextMouseHolePeekAt
       if (mouseHolePeeking && now - mouseHolePeekStartedAt >= MOUSEHOLE_PEEK_DURATION_MS) {
         mouseHolePeeking = false
+        // The roll happens as the eyes withdraw, not when they first
+        // appear — a peek is "did it decide to come out", not "it's
+        // already out before you've even seen it look around."
+        if (Math.random() < MOUSEHOLE_SPAWN_CHANCE) {
+          const spawnId = nanoid()
+          mice = { ...mice, [spawnId]: makeMouse(spawnId, holePosition, now) }
+          playSound('squeak')
+        }
       }
       if (nextMouseHolePeekAt === 0) {
         nextMouseHolePeekAt =
@@ -533,11 +541,6 @@ export const usePetStore = create<PetStore>((set) => ({
           now +
           MOUSEHOLE_PEEK_MIN_INTERVAL_MS +
           Math.random() * (MOUSEHOLE_PEEK_MAX_INTERVAL_MS - MOUSEHOLE_PEEK_MIN_INTERVAL_MS)
-        if (Math.random() < MOUSEHOLE_SPAWN_CHANCE) {
-          const spawnId = nanoid()
-          mice = { ...mice, [spawnId]: makeMouse(spawnId, holePosition, now) }
-          playSound('squeak')
-        }
       }
 
       // Mice are fully autonomous — their own AI runs independently of any
@@ -1309,7 +1312,10 @@ export const usePetStore = create<PetStore>((set) => ({
       for (const id in moved) {
         if (moved[id].inSuitcase) continue
         const pet = moved[id]
-        const anchorLocal = getTailAnchorLocal(pet, now)
+        const chasingFleeingMouse = !!(
+          pet.targetMouseId && mice[pet.targetMouseId]?.state === 'fleeing'
+        )
+        const anchorLocal = getTailAnchorLocal(pet, now, chasingFleeingMouse)
         const anchorWorld = { x: pet.position.x + anchorLocal.x, y: pet.position.y + anchorLocal.y }
 
         const segments =

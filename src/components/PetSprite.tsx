@@ -27,6 +27,16 @@ const SPOT_POSITIONS = [
 // Eye geometry, in head-local coordinates (drawn facing right).
 const EYE_XS = [55, 63]
 const EYE_Y = 23
+// Nose/mouth/whiskers all anchor off this one point — just ahead of and
+// below the eyes, on the muzzle before the head polygon's front corner
+// (74,34).
+const NOSE_X = 70
+const NOSE_Y = 29
+// How long the mouth flashes open in a little "O" after a click-select
+// meow — the only vocalization moment PetSprite.tsx has direct visibility
+// into (a hungry-meow/hiss/growl are triggered store-side in petStore.ts,
+// which has no way to signal a specific render-only mouth shape back).
+const MEOW_FLASH_MS = 350
 
 const ATTENTION_RADIUS = 280
 const MAX_HEAD_TILT_DEG = 14
@@ -152,6 +162,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     groom: 0,
     stretch: 0,
     knead: 0,
+    meowFlashUntil: 0,
     lastNow: performance.now(),
     lastPos: { x: pet.position.x, y: pet.position.y },
   })
@@ -321,6 +332,17 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const blinking = (now + hash * 137) % blinkPeriod < BLINK_MS
   const eyesClosed = isPetting || lie > 0.5 || blinking
 
+  // Mouth: an "O" while eating or mid-meow, a "P" (tongue peeking out,
+  // licking) during a flank-lick's own down-stroke, an upside-down-Y the
+  // rest of the time. `groomPhase`'s own sine already drives the lick's
+  // head-dip (groomHeadPitch below) — reusing it here keeps the tongue
+  // flicking out in time with that same dip instead of on its own clock.
+  const licking = groom > 0 && groomVariant === 'lick' && Math.sin(groomPhase) > 0.2
+  const meowing = now < eased.meowFlashUntil
+  const mouthShape: 'Y' | 'O' | 'P' = pet.action === 'eating' || meowing ? 'O' : licking ? 'P' : 'Y'
+  // Stable per-cat, not re-rolled every render — same trick as groomVariant.
+  const noseColor = hash % 3 === 0 ? '#2b2620' : '#e79aa8'
+
   // A flank-lick dips the head down toward the cat's own side in a slow
   // rhythmic bob; a paw-wash follows the raised paw with a smaller,
   // quicker dip in time with the wash. catPose.ts doesn't move any leg
@@ -390,6 +412,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
       } else {
         usePetStore.getState().selectPet(pet.id)
         playSound('select')
+        eased.meowFlashUntil = performance.now() + MEOW_FLASH_MS
       }
     }
 
@@ -637,6 +660,58 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
                 </g>
               )
             })}
+
+            {/* Whiskers — a simple 3-line fan from the muzzle, same side as
+                the visible cheek in this profile view. Purely decorative,
+                no per-cat/state variation. */}
+            <g stroke={stroke} strokeWidth={0.6} strokeLinecap="round" opacity={0.8}>
+              <line x1={NOSE_X - 3} y1={NOSE_Y - 3} x2={NOSE_X + 8} y2={NOSE_Y - 7} />
+              <line x1={NOSE_X - 2} y1={NOSE_Y} x2={NOSE_X + 10} y2={NOSE_Y} />
+              <line x1={NOSE_X - 3} y1={NOSE_Y + 3} x2={NOSE_X + 8} y2={NOSE_Y + 7} />
+            </g>
+
+            <circle
+              cx={NOSE_X}
+              cy={NOSE_Y}
+              r={1.3}
+              fill={noseColor}
+              stroke={stroke}
+              strokeWidth={0.4}
+            />
+
+            {mouthShape === 'O' && (
+              <ellipse
+                cx={NOSE_X - 1}
+                cy={NOSE_Y + 3.2}
+                rx={1.6}
+                ry={2}
+                fill="#6b3f3f"
+                stroke={stroke}
+                strokeWidth={0.6}
+              />
+            )}
+            {mouthShape === 'P' && (
+              <g stroke={stroke} strokeWidth={0.8} strokeLinecap="round" fill="none">
+                <line x1={NOSE_X - 1} y1={NOSE_Y + 1.5} x2={NOSE_X - 1} y2={NOSE_Y + 6} />
+                <circle
+                  cx={NOSE_X + 0.6}
+                  cy={NOSE_Y + 2.2}
+                  r={1.1}
+                  fill="#e79aa8"
+                  stroke={stroke}
+                />
+              </g>
+            )}
+            {mouthShape === 'Y' && (
+              <g stroke={stroke} strokeWidth={0.7} strokeLinecap="round" fill="none">
+                <path
+                  d={`M ${NOSE_X - 1} ${NOSE_Y + 2} Q ${NOSE_X - 4} ${NOSE_Y + 4.5} ${NOSE_X - 6} ${NOSE_Y + 3.5}`}
+                />
+                <path
+                  d={`M ${NOSE_X - 1} ${NOSE_Y + 2} Q ${NOSE_X + 2} ${NOSE_Y + 4.5} ${NOSE_X + 4} ${NOSE_Y + 3.5}`}
+                />
+              </g>
+            )}
           </g>
         </g>
       </svg>
