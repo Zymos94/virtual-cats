@@ -70,15 +70,16 @@ const DECAY_INTERVAL_MS = 1000
 const DECAY_PER_SECOND: Needs = { hunger: -0.05, energy: -0.03, hygiene: -0.02, happiness: -0.02 }
 
 const PLACE_DROP_HEIGHT = 24
-const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
+const LIFT_RATIO = 0.35 // fraction of throw speed converted into upward lift
 const MAX_LIFT = 600 // px/s cap, so a very fast swipe doesn't launch it absurdly high
-// Fraction of throw speed converted into ground travel — deliberately
-// small. A thrown item should mostly just bounce near where it landed;
-// only a wall bounce (see itemPhysics.ts) should send it noticeably
-// further across the room, not the initial throw itself. Kept small even
-// accounting for how little the ball's own low friction slows it down on
-// its own (see itemDefinitions.ts).
-const GROUND_RATIO = 0.12
+// Fraction of throw speed that becomes ground travel. High enough that a
+// swipe visibly carries the item in the swipe's direction — a hard throw
+// should genuinely cross a good part of the room, a gentle flick should
+// roll a short way. Runaway sliding is prevented in itemPhysics.ts (each
+// floor bounce scrubs ground speed, then rolling friction), not by
+// choking the throw itself at the source — that made every throw pop
+// straight up and land at your feet.
+const GROUND_RATIO = 0.55
 const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is free, shouldn't outshine toys
 // Happiness gained per second while being petted, scaled by the cat's own
 // affection trait — a very affectionate cat (affection 100) gains roughly

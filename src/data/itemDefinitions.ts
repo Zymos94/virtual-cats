@@ -25,7 +25,12 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     category: 'toy',
     icon: '🎾',
     effect: { happiness: 25, energy: -10 },
-    physics: { mass: 0.5, friction: 0.15, bounciness: 0.55 },
+    // Friction is per-second speed loss while rolling on the floor (air
+    // travel is friction-free — see itemPhysics.ts). 0.55 lets the ball
+    // roll out visibly further than anything else here without the
+    // near-frictionless 0.15 it used to have, where any leftover speed
+    // rolled for twenty-plus seconds and the whole width of the room.
+    physics: { mass: 0.5, friction: 0.55, bounciness: 0.55 },
     consumable: true,
   },
   {

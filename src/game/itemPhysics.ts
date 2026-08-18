@@ -4,6 +4,19 @@ import { WALL_BAND_FRACTION } from './roomLayout'
 const GRAVITY = 1800 // px/s^2, constantly pulls height back toward the floor
 const Z_STOP_THRESHOLD = 20 // px/s vertical speed — below this on landing, it's fully settled
 const XY_STOP_THRESHOLD = 6 // px/s ground speed — below this, snap to a full stop
+// Fraction of ground speed kept on each floor impact. Every bounce scrubs
+// some horizontal momentum (a real ball skids slightly at the contact
+// point), which is what lets airborne travel stay friction-free without a
+// bouncing throw crossing the whole room: 3–4 bounces compound to roughly
+// halving the ground speed before rolling friction takes over.
+const BOUNCE_GROUND_KEEP = 0.72
+// Constant rolling deceleration (px/s²) applied on top of the exponential
+// friction while grounded. Exponential decay alone never really finishes —
+// it leaves a long, slow creep at the tail (tens of px/s for seconds),
+// which reads as gliding on ice. A small constant term barely registers at
+// throw speeds but closes out the last bit of roll decisively, the way
+// rolling resistance actually behaves.
+const ROLL_DECEL = 60
 const MARGIN = 16 // keeps the item's icon fully inside the room's side/front edges
 // Belt-and-suspenders cap alongside useGameLoop's deltaMs clamp — no throw
 // in this room should ever need to arc higher than this.
@@ -74,11 +87,13 @@ export function stepItemPhysics(
 
   let height = item.height
   let vz = item.verticalVelocity
+  let hitFloor = false
   if (height > 0 || vz !== 0) {
     vz -= GRAVITY * dt
     height += vz * dt
     if (height <= 0) {
       height = 0
+      hitFloor = true
       vz = Math.abs(vz) < Z_STOP_THRESHOLD ? 0 : -vz * profile.bounciness
     } else if (height > MAX_HEIGHT) {
       height = MAX_HEIGHT
@@ -126,16 +141,28 @@ export function stepItemPhysics(
       vy = -vy * profile.bounciness
     }
 
-    // Friction decelerates ground speed continuously, not just once fully
-    // at rest — gated behind "grounded", a bouncing item's ground velocity
-    // never decayed at all for as long as it kept bouncing (height
-    // crosses back above 0 almost every frame while mid-bounce), letting
-    // a throw slide the full width of the room before it ever slowed
-    // down. A thrown item should settle near where it was thrown by
-    // default; only a wall bounce should carry it noticeably further.
-    const decay = Math.pow(1 - profile.friction, dt)
-    vx *= decay
-    vy *= decay
+    // Ground friction applies only while actually touching the floor — an
+    // airborne item keeps its full throw momentum, like a real projectile.
+    // The earlier "gate friction behind fully-at-rest" bug (a bouncing
+    // throw never slowing, sliding the full room width) is instead solved
+    // where the energy is really lost: each floor impact scrubs a chunk of
+    // ground speed (BOUNCE_GROUND_KEEP), and continuous rolling friction
+    // takes over once the item is rolling on the floor.
+    if (hitFloor) {
+      vx *= BOUNCE_GROUND_KEEP
+      vy *= BOUNCE_GROUND_KEEP
+    }
+    if (height <= 0) {
+      const decay = Math.pow(1 - profile.friction, dt)
+      vx *= decay
+      vy *= decay
+      const speed = Math.hypot(vx, vy)
+      if (speed > 0) {
+        const slowed = Math.max(0, speed - ROLL_DECEL * dt)
+        vx *= slowed / speed
+        vy *= slowed / speed
+      }
+    }
     if (Math.hypot(vx, vy) < XY_STOP_THRESHOLD) {
       vx = 0
       vy = 0
