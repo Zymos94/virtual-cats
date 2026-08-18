@@ -10,10 +10,11 @@ repo is at commit `8ab13ed` (M19) as of writing.
 **Sequencing (owner-confirmed):** execute `ARCHITECTURE.md` phases 1–8 first. This plan's phases
 assume the save-migration system (its Phase 7) and the store slice split (its Phase 8) have landed.
 New genetics fields added here go through real migrations, not ad-hoc `?? default` patching.
-**Phase A1 jumped the queue** (owner request, 2026-08-18) — it only touches pure render/game files
-(`gaits.ts`, `catPose.ts`, `movement.ts` was untouched, `PetSprite.tsx`, `tailMood.ts`), no store
-fields or save schema, so it was safe to do ahead of Phases 7–8. **A4 (genetics wiring) still
-waits** for those phases to land, as planned.
+**Phases A1 and A2 jumped the queue** (owner request, 2026-08-18) — both only touch pure
+render/game files plus one new transient (unsaved) `ActionState` value (`'stalking'`), no
+persisted store fields or save schema, so it was safe to do ahead of Phases 7–8. **A4 (genetics
+wiring) still waits** for those phases to land, as planned — it's the first phase here that
+actually needs the migration system.
 
 ## Status
 
@@ -24,8 +25,18 @@ waits** for those phases to land, as planned.
   scoped to A1) — legs go loose and swing on drag-velocity lag, body leans like a pendulum from a
   neck pivot, tail drops and hangs limp. Lives in the same pose layer (`catPose.ts`'s `hold` blend)
   so it composes cleanly with everything A2+ adds.
-- ⬜ A2 (slink/gallop/strut + stalking state) — not started.
-- ⬜ A3–A7 — not started.
+- ✅ **Phase A2 — done** (commit `955bcb3`). Slink, gallop, and strut `GaitDef`s, each carrying
+  stride/lift multipliers, body/head posture, and tail carriage (`bodyPoseFor` in `gaits.ts`) on
+  top of the A1 pose layer — walk/trot are untouched (neutral values), so nothing regressed. New
+  `stalking` action (transient, mirrors `walking` in the FSM) that `petStore.tick()` switches a
+  trotting cat into within `STALK_RANGE` of a grounded toy, before the existing `POUNCE_RANGE`
+  trigger — reads as one continuous stalk-then-pounce. Gallop triggers on zoomies and on a very
+  hungry/exhausted cat closing in on something; a happy aimless wander struts. Verified with
+  deterministic manual `tick()` stepping in a real browser (paused `timeScale`, drove `tick()`
+  directly to land on exact frames) — slink, gallop's stretch-and-gather, strut's high step, and
+  the full stalk→pounce→play sequence all confirmed visually.
+- ⬜ A3 (idle animation library) — not started.
+- ⬜ A4–A7 — not started.
 
 ## Decisions made (owner-confirmed, do not re-litigate)
 
