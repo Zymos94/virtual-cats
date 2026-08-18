@@ -126,15 +126,19 @@ export function stepItemPhysics(
       vy = -vy * profile.bounciness
     }
 
-    // Grounded (not mid-bounce, not airborne) — friction takes over.
-    if (height === 0 && vz === 0) {
-      const decay = Math.pow(1 - profile.friction, dt)
-      vx *= decay
-      vy *= decay
-      if (Math.hypot(vx, vy) < XY_STOP_THRESHOLD) {
-        vx = 0
-        vy = 0
-      }
+    // Friction decelerates ground speed continuously, not just once fully
+    // at rest — gated behind "grounded", a bouncing item's ground velocity
+    // never decayed at all for as long as it kept bouncing (height
+    // crosses back above 0 almost every frame while mid-bounce), letting
+    // a throw slide the full width of the room before it ever slowed
+    // down. A thrown item should settle near where it was thrown by
+    // default; only a wall bounce should carry it noticeably further.
+    const decay = Math.pow(1 - profile.friction, dt)
+    vx *= decay
+    vy *= decay
+    if (Math.hypot(vx, vy) < XY_STOP_THRESHOLD) {
+      vx = 0
+      vy = 0
     }
   }
 

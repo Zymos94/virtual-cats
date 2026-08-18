@@ -60,6 +60,13 @@ const DECAY_PER_SECOND: Needs = { hunger: -0.05, energy: -0.03, hygiene: -0.02, 
 const PLACE_DROP_HEIGHT = 24
 const LIFT_RATIO = 0.6 // fraction of throw speed converted into upward lift
 const MAX_LIFT = 600 // px/s cap, so a very fast swipe doesn't launch it absurdly high
+// Fraction of throw speed converted into ground travel — deliberately
+// small. A thrown item should mostly just bounce near where it landed;
+// only a wall bounce (see itemPhysics.ts) should send it noticeably
+// further across the room, not the initial throw itself. Kept small even
+// accounting for how little the ball's own low friction slows it down on
+// its own (see itemDefinitions.ts).
+const GROUND_RATIO = 0.12
 const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is free, shouldn't outshine toys
 // Happiness gained per second while being petted, scaled by the cat's own
 // affection trait — a very affectionate cat (affection 100) gains roughly
@@ -602,7 +609,8 @@ export const usePetStore = create<PetStore>((set) => ({
   // drag. Heavier items get proportionally less speed from the same
   // swipe, and every throw gets some automatic upward lift (like a real
   // toss) so it arcs up and falls back down under gravity instead of
-  // sliding flat along the floor.
+  // sliding flat along the floor. Most of that speed becomes lift/bounce
+  // energy rather than ground travel — see GROUND_RATIO.
   endDragItem: (itemId, throwVelocity) =>
     set((state) => {
       const item = state.sceneItems[itemId]
@@ -610,10 +618,10 @@ export const usePetStore = create<PetStore>((set) => ({
       const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
       const mass = definition?.physics.mass ?? 1
 
-      const vx = throwVelocity.x / mass
-      const vy = throwVelocity.y / mass
-      const horizontalSpeed = Math.hypot(vx, vy)
-      const verticalVelocity = Math.min(horizontalSpeed * LIFT_RATIO, MAX_LIFT)
+      const speed = Math.hypot(throwVelocity.x, throwVelocity.y) / mass
+      const vx = (throwVelocity.x / mass) * GROUND_RATIO
+      const vy = (throwVelocity.y / mass) * GROUND_RATIO
+      const verticalVelocity = Math.min(speed * LIFT_RATIO, MAX_LIFT)
 
       return {
         sceneItems: {
