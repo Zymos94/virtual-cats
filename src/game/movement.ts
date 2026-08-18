@@ -41,7 +41,11 @@ export function randomPointInBounds(
 
 function targetSpeedFor(pet: Pet, distanceLeft: number): number {
   const base =
-    pet.action === 'zoomies' ? RUN_SPEED : pet.targetItemId || pet.targetPetId ? TROT_SPEED : AMBLE_SPEED
+    pet.action === 'zoomies'
+      ? RUN_SPEED
+      : pet.targetItemId || pet.targetPetId
+        ? TROT_SPEED
+        : AMBLE_SPEED
   const scaled = base * getLifeStageSpeedMultiplier(getLifeStage(pet.ageMs))
   if (distanceLeft >= ARRIVE_RADIUS) return scaled
   return Math.max(MIN_ARRIVE_SPEED, scaled * (distanceLeft / ARRIVE_RADIUS))

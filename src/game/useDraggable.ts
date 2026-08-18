@@ -18,7 +18,10 @@ const CLICK_THRESHOLD_PX = 4
 // draggable (cats, items, the ball). Window-level listeners during the drag
 // keep tracking the pointer even if it moves faster than the element or
 // leaves its bounds — the standard pattern for drag interactions.
-export function useDraggable(getCurrentPosition: () => { x: number; y: number }, handlers: DragHandlers) {
+export function useDraggable(
+  getCurrentPosition: () => { x: number; y: number },
+  handlers: DragHandlers,
+) {
   function onPointerDown(e: ReactPointerEvent) {
     e.preventDefault()
     const startPointer = { x: e.clientX, y: e.clientY }

@@ -30,10 +30,42 @@ interface LegSpec {
 // Hind legs get more bone than the hip→ground distance so the hock
 // visibly bends; front legs are nearly straight, like the real animal.
 const LEGS: LegSpec[] = [
-  { hip: { x: 17, y: 41 }, restOffset: -2, phaseOffset: 0, upper: 8.5, lower: 9, isFront: false, isNear: false },
-  { hip: { x: 27, y: 41 }, restOffset: 2, phaseOffset: Math.PI, upper: 8.5, lower: 9, isFront: false, isNear: true },
-  { hip: { x: 43, y: 41 }, restOffset: -2, phaseOffset: Math.PI, upper: 7, lower: 7, isFront: true, isNear: false },
-  { hip: { x: 53, y: 41 }, restOffset: 2, phaseOffset: 0, upper: 7, lower: 7, isFront: true, isNear: true },
+  {
+    hip: { x: 17, y: 41 },
+    restOffset: -2,
+    phaseOffset: 0,
+    upper: 8.5,
+    lower: 9,
+    isFront: false,
+    isNear: false,
+  },
+  {
+    hip: { x: 27, y: 41 },
+    restOffset: 2,
+    phaseOffset: Math.PI,
+    upper: 8.5,
+    lower: 9,
+    isFront: false,
+    isNear: true,
+  },
+  {
+    hip: { x: 43, y: 41 },
+    restOffset: -2,
+    phaseOffset: Math.PI,
+    upper: 7,
+    lower: 7,
+    isFront: true,
+    isNear: false,
+  },
+  {
+    hip: { x: 53, y: 41 },
+    restOffset: 2,
+    phaseOffset: 0,
+    upper: 7,
+    lower: 7,
+    isFront: true,
+    isNear: true,
+  },
 ]
 
 export interface LegPose {
@@ -100,7 +132,9 @@ export function computeLegPoses(input: PoseInput): LegPose[] {
     // Mid-hop: legs leave the cycle and stretch into the leap — front
     // paws reaching, hind legs trailing.
     if (input.hop > 0) {
-      const reach = leg.isFront ? { x: hip.x + 6, y: GROUND_Y - 5 } : { x: hip.x - 6, y: GROUND_Y - 2 }
+      const reach = leg.isFront
+        ? { x: hip.x + 6, y: GROUND_Y - 5 }
+        : { x: hip.x - 6, y: GROUND_Y - 2 }
       foot = { x: lerp(foot.x, reach.x, input.hop), y: lerp(foot.y, reach.y, input.hop) }
     }
 

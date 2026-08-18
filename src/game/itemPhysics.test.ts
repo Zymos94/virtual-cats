@@ -22,7 +22,12 @@ function makeItem(overrides: Partial<PlacedItem> = {}): PlacedItem {
 
 // Runs the simulation in fixed steps until the item fully settles (or the
 // frame budget runs out), mirroring how tick() drives it frame by frame.
-function simulateUntilSettled(item: PlacedItem, profile: PhysicsProfile, stepMs = 16, maxFrames = 3000) {
+function simulateUntilSettled(
+  item: PlacedItem,
+  profile: PhysicsProfile,
+  stepMs = 16,
+  maxFrames = 3000,
+) {
   let current = item
   let frames = 0
   while (frames < maxFrames) {
@@ -40,7 +45,12 @@ function simulateUntilSettled(item: PlacedItem, profile: PhysicsProfile, stepMs 
 
 describe('stepItemPhysics', () => {
   it('leaves a held item completely untouched', () => {
-    const item = makeItem({ held: true, velocity: { x: 300, y: 0 }, height: 50, verticalVelocity: 200 })
+    const item = makeItem({
+      held: true,
+      velocity: { x: 300, y: 0 },
+      height: 50,
+      verticalVelocity: 200,
+    })
     expect(stepItemPhysics(item, BALL, 16, BOUNDS)).toBe(item)
   })
 
@@ -73,7 +83,12 @@ describe('stepItemPhysics', () => {
   })
 
   it('a zero-bounciness item lands dead instead of bouncing', () => {
-    const item = makeItem({ itemTypeId: 'kibble', height: 60, verticalVelocity: 0, velocity: { x: 0, y: 0 } })
+    const item = makeItem({
+      itemTypeId: 'kibble',
+      height: 60,
+      verticalVelocity: 0,
+      velocity: { x: 0, y: 0 },
+    })
     const { item: landed, settled } = simulateUntilSettled(item, KIBBLE)
     expect(settled).toBe(true)
     expect(landed.height).toBe(0)

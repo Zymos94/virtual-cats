@@ -20,7 +20,11 @@ function App() {
 
   return (
     <div className="app">
-      <Scene pets={roomPets} placedItems={Object.values(sceneItems)} selectedPetId={selectedPetId} />
+      <Scene
+        pets={roomPets}
+        placedItems={Object.values(sceneItems)}
+        selectedPetId={selectedPetId}
+      />
 
       <div className="top-bar">
         <h1>Virtual Cats</h1>

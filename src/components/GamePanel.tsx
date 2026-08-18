@@ -54,7 +54,10 @@ export function GamePanel({ selectedPet, suitcasedPets, roomPets }: GamePanelPro
       const speed = Math.hypot(velocityRef.current.x, velocityRef.current.y)
       const thrown =
         speed > MAX_THROW_SPEED
-          ? { x: (velocityRef.current.x / speed) * MAX_THROW_SPEED, y: (velocityRef.current.y / speed) * MAX_THROW_SPEED }
+          ? {
+              x: (velocityRef.current.x / speed) * MAX_THROW_SPEED,
+              y: (velocityRef.current.y / speed) * MAX_THROW_SPEED,
+            }
           : velocityRef.current
       usePetStore.getState().endDragPanel(thrown)
     },
@@ -95,13 +98,16 @@ export function GamePanel({ selectedPet, suitcasedPets, roomPets }: GamePanelPro
                 aria-label="Cat name"
               />
               <p className="hint breed-hint">
-                {getLifeStageLabel(getLifeStage(selectedPet.ageMs))} {getBreedName(selectedPet.genetics)}
+                {getLifeStageLabel(getLifeStage(selectedPet.ageMs))}{' '}
+                {getBreedName(selectedPet.genetics)}
               </p>
               <StatBar label="Hunger" value={selectedPet.needs.hunger} color="#e07a3f" />
               <StatBar label="Energy" value={selectedPet.needs.energy} color="#3f8ee0" />
               <StatBar label="Hygiene" value={selectedPet.needs.hygiene} color="#3fe0a0" />
               <StatBar label="Happiness" value={selectedPet.needs.happiness} color="#e0d63f" />
-              <p className="hint personality-hint">{getPersonalityLabel(selectedPet.affection)} — hold to pet</p>
+              <p className="hint personality-hint">
+                {getPersonalityLabel(selectedPet.affection)} — hold to pet
+              </p>
             </>
           ) : (
             <p className="hint">Click a cat in the room to see its stats.</p>
@@ -120,7 +126,9 @@ export function GamePanel({ selectedPet, suitcasedPets, roomPets }: GamePanelPro
 
         {tab === 'items' && (
           <>
-            <p className="hint">Drag an item into the room — a cat that wants it will come use it.</p>
+            <p className="hint">
+              Drag an item into the room — a cat that wants it will come use it.
+            </p>
             <div className="item-grid">
               {ITEM_DEFINITIONS.map((item) => (
                 <ItemAvatar key={item.id} item={item} />

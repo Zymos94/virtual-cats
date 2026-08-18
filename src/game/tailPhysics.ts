@@ -40,5 +40,8 @@ export function stepChain(prevSegments: Point[], anchor: Point, linkLength: numb
 }
 
 export function initialSegments(anchor: Point, segmentCount: number, linkLength: number): Point[] {
-  return Array.from({ length: segmentCount }, (_, i) => ({ x: anchor.x, y: anchor.y + i * linkLength }))
+  return Array.from({ length: segmentCount }, (_, i) => ({
+    x: anchor.x,
+    y: anchor.y + i * linkLength,
+  }))
 }

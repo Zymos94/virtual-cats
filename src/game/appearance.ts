@@ -49,5 +49,11 @@ export function deriveAppearance(genetics: Genetics): Appearance {
   const pattern = getPhenotype('pattern', genetics.pattern)
   const { body, stroke } = FUR_HEX[furColor]
 
-  return { body, stroke, eye: EYE_HEX[eyeColor], scale: SIZE_SCALE[size], spotted: pattern === 'spotted' }
+  return {
+    body,
+    stroke,
+    eye: EYE_HEX[eyeColor],
+    scale: SIZE_SCALE[size],
+    spotted: pattern === 'spotted',
+  }
 }

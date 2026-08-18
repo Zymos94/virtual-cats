@@ -8,7 +8,10 @@ interface SavedState {
   sceneItems: Record<string, PlacedItem>
 }
 
-export function saveToLocalStorage(pets: Record<string, Pet>, sceneItems: Record<string, PlacedItem>): void {
+export function saveToLocalStorage(
+  pets: Record<string, Pet>,
+  sceneItems: Record<string, PlacedItem>,
+): void {
   const data: SavedState = { pets, sceneItems }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }

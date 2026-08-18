@@ -128,7 +128,12 @@ describe('zoomies', () => {
   })
 
   it('winds down to idle when the burst is over', () => {
-    const pet = makePet({ action: 'zoomies', actionStartedAt: 0, actionDurationMs: 4000, destination: { x: 900, y: 300 } })
+    const pet = makePet({
+      action: 'zoomies',
+      actionStartedAt: 0,
+      actionDurationMs: 4000,
+      destination: { x: 900, y: 300 },
+    })
     const next = updatePetBehavior(pet, { now: 5000, sceneBounds: BOUNDS, bestTarget: null })
     expect(next.action).toBe('idle')
   })

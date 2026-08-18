@@ -28,9 +28,13 @@ export function CatAvatar({ pet }: CatAvatarProps) {
       window.removeEventListener('pointerup', onUp)
       setDragPos(null)
 
-      const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.game-panel')
+      const droppedOnSuitcase = !!document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest('.game-panel')
       if (!droppedOnSuitcase) {
-        usePetStore.getState().takePetFromSuitcase(pet.id, { x: ev.clientX - 40, y: ev.clientY - 30 })
+        usePetStore
+          .getState()
+          .takePetFromSuitcase(pet.id, { x: ev.clientX - 40, y: ev.clientY - 30 })
       }
     }
 
@@ -40,14 +44,23 @@ export function CatAvatar({ pet }: CatAvatarProps) {
 
   return (
     <>
-      <button className="cat-avatar" onPointerDown={onPointerDown} title={`Drag ${pet.name} into the room`}>
+      <button
+        className="cat-avatar"
+        onPointerDown={onPointerDown}
+        title={`Drag ${pet.name} into the room`}
+      >
         <span className="cat-avatar-dot" style={{ background: body, borderColor: stroke }} />
         <span className="cat-avatar-name">{pet.name}</span>
       </button>
       {dragPos && (
         <div
           className="cat-avatar-ghost"
-          style={{ left: dragPos.x - 16, top: dragPos.y - 16, background: body, borderColor: stroke }}
+          style={{
+            left: dragPos.x - 16,
+            top: dragPos.y - 16,
+            background: body,
+            borderColor: stroke,
+          }}
         />
       )}
     </>

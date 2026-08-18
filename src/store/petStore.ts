@@ -172,7 +172,9 @@ function homozygous<T extends string>(value: T): { allele1: T; allele2: T } {
   return { allele1: value, allele2: value }
 }
 
-function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genetics'> & Partial<Pet>): Pet {
+function makeStarterPet(
+  overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genetics'> & Partial<Pet>,
+): Pet {
   return {
     needs: { hunger: 70, energy: 85, hygiene: 90, happiness: 60 },
     destination: null,
@@ -267,7 +269,8 @@ function sanitizeLoadedPet(pet: Pet): Pet {
 
 function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<string, PlacedItem> } {
   const saved = loadFromLocalStorage()
-  if (!saved || Object.keys(saved.pets).length === 0) return { pets: freshStarterPets(), sceneItems: {} }
+  if (!saved || Object.keys(saved.pets).length === 0)
+    return { pets: freshStarterPets(), sceneItems: {} }
 
   const pets: Record<string, Pet> = {}
   for (const id in saved.pets) pets[id] = sanitizeLoadedPet(saved.pets[id])
@@ -336,9 +339,13 @@ export const usePetStore = create<PetStore>((set) => ({
         const decay = Math.pow(1 - PANEL_FRICTION, rdt)
         const vx = panelVelocity.x * decay
         const vy = panelVelocity.y * decay
-        panelVelocity = Math.hypot(vx, vy) < PANEL_STOP_THRESHOLD_PX_PER_SEC ? { x: 0, y: 0 } : { x: vx, y: vy }
+        panelVelocity =
+          Math.hypot(vx, vy) < PANEL_STOP_THRESHOLD_PX_PER_SEC ? { x: 0, y: 0 } : { x: vx, y: vy }
         panelPosition = clampPanelPosition(
-          { x: panelPosition.x + panelVelocity.x * rdt, y: panelPosition.y + panelVelocity.y * rdt },
+          {
+            x: panelPosition.x + panelVelocity.x * rdt,
+            y: panelPosition.y + panelVelocity.y * rdt,
+          },
           state.sceneBounds,
         )
       }
@@ -395,7 +402,10 @@ export const usePetStore = create<PetStore>((set) => ({
         if (pet.action === 'petting') {
           const rate = PETTING_BASE_RATE + (pet.affection / 100) * PETTING_AFFECTION_BONUS
           const gained = rate * (deltaMs / 1000)
-          moved[id] = { ...pet, needs: { ...pet.needs, happiness: clamp(pet.needs.happiness + gained) } }
+          moved[id] = {
+            ...pet,
+            needs: { ...pet.needs, happiness: clamp(pet.needs.happiness + gained) },
+          }
           continue
         }
 
@@ -410,7 +420,10 @@ export const usePetStore = create<PetStore>((set) => ({
           const definition = ITEM_DEFINITIONS.find((d) => d.id === item.itemTypeId)
           if (!definition) continue
           const urgency = itemUrgency(pet, definition)
-          const distance = Math.hypot(item.position.x - pet.position.x, item.position.y - pet.position.y)
+          const distance = Math.hypot(
+            item.position.x - pet.position.x,
+            item.position.y - pet.position.y,
+          )
           const score = attentionScore(urgency, distance, pet.attentionSpan)
           if (score > bestScore) {
             bestScore = score
@@ -423,9 +436,17 @@ export const usePetStore = create<PetStore>((set) => ({
           for (const otherId in pets) {
             if (otherId === id || socialClaimed.has(otherId)) continue
             const other = pets[otherId]
-            if (other.inSuitcase || other.action === 'held' || other.action === 'playing' || other.action === 'petting')
+            if (
+              other.inSuitcase ||
+              other.action === 'held' ||
+              other.action === 'playing' ||
+              other.action === 'petting'
+            )
               continue
-            const distance = Math.hypot(other.position.x - pet.position.x, other.position.y - pet.position.y)
+            const distance = Math.hypot(
+              other.position.x - pet.position.x,
+              other.position.y - pet.position.y,
+            )
             const score = attentionScore(ownSocialUrgency, distance, pet.attentionSpan)
             if (score > bestScore) {
               bestScore = score
@@ -456,7 +477,10 @@ export const usePetStore = create<PetStore>((set) => ({
         } else if (decided.action === 'walking' && decided.targetPetId) {
           const target = pets[decided.targetPetId]
           if (target && !target.inSuitcase) {
-            decided = { ...decided, destination: { x: target.position.x + 50, y: target.position.y } }
+            decided = {
+              ...decided,
+              destination: { x: target.position.x + 50, y: target.position.y },
+            }
           } else {
             // Target vanished (picked up, put away) — give up and reconsider.
             decided = { ...decided, action: 'idle', destination: null, targetPetId: null }
@@ -471,7 +495,10 @@ export const usePetStore = create<PetStore>((set) => ({
           const target = sceneItems[decided.targetItemId]
           const definition = target && ITEM_DEFINITIONS.find((d) => d.id === target.itemTypeId)
           if (target && definition?.category === 'toy' && target.height <= 0.5) {
-            const pounceDist = Math.hypot(target.position.x - decided.position.x, target.position.y - decided.position.y)
+            const pounceDist = Math.hypot(
+              target.position.x - decided.position.x,
+              target.position.y - decided.position.y,
+            )
             if (pounceDist < POUNCE_RANGE && pounceDist > POUNCE_MIN_RANGE) {
               decided = {
                 ...decided,
@@ -497,14 +524,18 @@ export const usePetStore = create<PetStore>((set) => ({
         // it's still airborne (mid-bounce, or the player just re-threw
         // it), don't "use" something floating above the floor — just give
         // up this attempt and reconsider next cycle.
-        const wasApproaching = pet.action === 'walking' || pet.action === 'pouncing' || decided.action === 'pouncing'
+        const wasApproaching =
+          pet.action === 'walking' || pet.action === 'pouncing' || decided.action === 'pouncing'
         if (wasApproaching && finalPet.action === 'idle' && finalPet.targetItemId) {
           const placedItem = sceneItems[finalPet.targetItemId]
-          const definition = placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
+          const definition =
+            placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
           const missedIt =
             placedItem &&
-            Math.hypot(placedItem.position.x - finalPet.position.x, placedItem.position.y - finalPet.position.y) >
-              POUNCE_MISS_DISTANCE
+            Math.hypot(
+              placedItem.position.x - finalPet.position.x,
+              placedItem.position.y - finalPet.position.y,
+            ) > POUNCE_MISS_DISTANCE
           if (placedItem && definition && placedItem.height <= 0.5 && !missedIt) {
             let needs = finalPet.needs
             for (const key in definition.effect) {
@@ -513,7 +544,11 @@ export const usePetStore = create<PetStore>((set) => ({
               needs = { ...needs, [need]: clamp(needs[need] + amount) }
             }
             const action: ActionState =
-              definition.category === 'food' ? 'eating' : definition.category === 'bed' ? 'sleeping' : 'playing'
+              definition.category === 'food'
+                ? 'eating'
+                : definition.category === 'bed'
+                  ? 'sleeping'
+                  : 'playing'
             finalPet = { ...finalPet, needs, action, targetItemId: null, actionStartedAt: now }
             if (action === 'eating' || action === 'playing') playSound(action)
             if (definition.consumable) {
@@ -535,7 +570,8 @@ export const usePetStore = create<PetStore>((set) => ({
       // Apply newly-made social claims so the claimed cat waits in place
       // starting next tick, and shows up excluded for anyone else.
       for (const targetId in newSocialClaims) {
-        if (moved[targetId]) moved[targetId] = { ...moved[targetId], socialClaimedBy: newSocialClaims[targetId] }
+        if (moved[targetId])
+          moved[targetId] = { ...moved[targetId], socialClaimedBy: newSocialClaims[targetId] }
       }
 
       // Mutual arrival: a pet that just finished walking toward another cat
@@ -548,13 +584,21 @@ export const usePetStore = create<PetStore>((set) => ({
         const after = moved[id]
         if (before?.action === 'walking' && after.action === 'idle' && after.targetPetId) {
           const partner = moved[after.targetPetId]
-          if (partner && !partner.inSuitcase && partner.action !== 'held' && partner.action !== 'playing') {
+          if (
+            partner &&
+            !partner.inSuitcase &&
+            partner.action !== 'held' &&
+            partner.action !== 'playing'
+          ) {
             playSound('playing')
             moved[id] = {
               ...after,
               action: 'playing',
               actionStartedAt: now,
-              needs: { ...after.needs, happiness: clamp(after.needs.happiness + SOCIAL_HAPPINESS_BOOST) },
+              needs: {
+                ...after.needs,
+                happiness: clamp(after.needs.happiness + SOCIAL_HAPPINESS_BOOST),
+              },
             }
             moved[after.targetPetId] = {
               ...partner,
@@ -562,7 +606,10 @@ export const usePetStore = create<PetStore>((set) => ({
               actionStartedAt: now,
               targetPetId: id,
               socialClaimedBy: null,
-              needs: { ...partner.needs, happiness: clamp(partner.needs.happiness + SOCIAL_HAPPINESS_BOOST) },
+              needs: {
+                ...partner.needs,
+                happiness: clamp(partner.needs.happiness + SOCIAL_HAPPINESS_BOOST),
+              },
             }
           } else {
             moved[id] = { ...after, targetPetId: null }
@@ -585,11 +632,19 @@ export const usePetStore = create<PetStore>((set) => ({
         const anchorLocal = getTailAnchorLocal(pet, now)
         const anchorWorld = { x: pet.position.x + anchorLocal.x, y: pet.position.y + anchorLocal.y }
 
-        const segments = state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
+        const segments =
+          state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
         tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
       }
 
-      return { pets: moved, sceneItems, decayAccumulatorMs: accumulator, tailSegments, panelPosition, panelVelocity }
+      return {
+        pets: moved,
+        sceneItems,
+        decayAccumulatorMs: accumulator,
+        tailSegments,
+        panelPosition,
+        panelVelocity,
+      }
     }),
 
   selectPet: (petId) => set({ selectedPetId: petId }),
@@ -600,7 +655,18 @@ export const usePetStore = create<PetStore>((set) => ({
       if (!pet) return state
       const pets = releaseSocialClaims(state.pets, petId)
       return {
-        pets: { ...pets, [petId]: { ...pets[petId], action: 'held', destination: null, targetItemId: null, targetPetId: null, jump: null, currentSpeed: 0 } },
+        pets: {
+          ...pets,
+          [petId]: {
+            ...pets[petId],
+            action: 'held',
+            destination: null,
+            targetItemId: null,
+            targetPetId: null,
+            jump: null,
+            currentSpeed: 0,
+          },
+        },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
     }),
@@ -618,7 +684,18 @@ export const usePetStore = create<PetStore>((set) => ({
       }
       const pets = releaseSocialClaims(state.pets, petId)
       return {
-        pets: { ...pets, [petId]: { ...pets[petId], action: 'petting', destination: null, targetItemId: null, targetPetId: null, jump: null, currentSpeed: 0 } },
+        pets: {
+          ...pets,
+          [petId]: {
+            ...pets[petId],
+            action: 'petting',
+            destination: null,
+            targetItemId: null,
+            targetPetId: null,
+            jump: null,
+            currentSpeed: 0,
+          },
+        },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
     }),
@@ -628,7 +705,12 @@ export const usePetStore = create<PetStore>((set) => ({
       const pet = state.pets[petId]
       stopLoop(petId)
       if (!pet || pet.action !== 'petting') return state
-      return { pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } } }
+      return {
+        pets: {
+          ...state.pets,
+          [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() },
+        },
+      }
     }),
 
   dragPetTo: (petId, x, y) =>
@@ -643,7 +725,10 @@ export const usePetStore = create<PetStore>((set) => ({
       const pet = state.pets[petId]
       if (!pet || pet.action !== 'held') return state
       return {
-        pets: { ...state.pets, [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() } },
+        pets: {
+          ...state.pets,
+          [petId]: { ...pet, action: 'idle', actionStartedAt: performance.now() },
+        },
       }
     }),
 
@@ -678,7 +763,13 @@ export const usePetStore = create<PetStore>((set) => ({
       return {
         pets: {
           ...state.pets,
-          [petId]: { ...pet, inSuitcase: false, position, action: 'idle', actionStartedAt: performance.now() },
+          [petId]: {
+            ...pet,
+            inSuitcase: false,
+            position,
+            action: 'idle',
+            actionStartedAt: performance.now(),
+          },
         },
       }
     }),
@@ -709,7 +800,14 @@ export const usePetStore = create<PetStore>((set) => ({
       return {
         sceneItems: {
           ...state.sceneItems,
-          [itemId]: { ...item, held: true, velocity: { x: 0, y: 0 }, height: 0, verticalVelocity: 0, claimedBy: null },
+          [itemId]: {
+            ...item,
+            held: true,
+            velocity: { x: 0, y: 0 },
+            height: 0,
+            verticalVelocity: 0,
+            claimedBy: null,
+          },
         },
       }
     }),
@@ -775,7 +873,9 @@ export const usePetStore = create<PetStore>((set) => ({
         // Not part of the formal genetics system — just a simple average
         // of the parents' attention spans with a little random variation,
         // enough for kittens to feel like they take after their parents.
-        attentionSpan: clampAttentionSpan((parentA.attentionSpan + parentB.attentionSpan) / 2 + (Math.random() * 60 - 30)),
+        attentionSpan: clampAttentionSpan(
+          (parentA.attentionSpan + parentB.attentionSpan) / 2 + (Math.random() * 60 - 30),
+        ),
         targetPetId: null,
         socialClaimedBy: null,
         // Same light inheritance-with-variance pattern as attentionSpan.
@@ -819,4 +919,3 @@ usePetStore.subscribe((state) => {
   lastSaveAt = now
   saveToLocalStorage(state.pets, state.sceneItems)
 })
-

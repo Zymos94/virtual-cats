@@ -188,8 +188,12 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       return pet
     }
     case 'walking': {
-      if (!pet.destination) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
-      const dist = Math.hypot(pet.destination.x - pet.position.x, pet.destination.y - pet.position.y)
+      if (!pet.destination)
+        return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      const dist = Math.hypot(
+        pet.destination.x - pet.position.x,
+        pet.destination.y - pet.position.y,
+      )
       if (dist < 4) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
       return pet
     }

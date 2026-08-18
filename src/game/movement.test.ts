@@ -45,7 +45,11 @@ describe('movePet gaits', () => {
 
   it('trots faster toward a wanted item than it ambles on a wander', () => {
     let wanderer = makePet({ action: 'walking', destination: { x: 2000, y: 300 } })
-    let chaser = makePet({ action: 'walking', destination: { x: 2000, y: 300 }, targetItemId: 'ball-1' })
+    let chaser = makePet({
+      action: 'walking',
+      destination: { x: 2000, y: 300 },
+      targetItemId: 'ball-1',
+    })
     for (let i = 0; i < 120; i++) {
       wanderer = movePet(wanderer, 16)
       chaser = movePet(chaser, 16)

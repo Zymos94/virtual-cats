@@ -6,7 +6,9 @@ import { usePetStore } from '../store/petStore'
 export function useSceneBounds() {
   useEffect(() => {
     function updateBounds() {
-      usePetStore.getState().setSceneBounds({ width: window.innerWidth, height: window.innerHeight })
+      usePetStore
+        .getState()
+        .setSceneBounds({ width: window.innerWidth, height: window.innerHeight })
     }
 
     updateBounds()

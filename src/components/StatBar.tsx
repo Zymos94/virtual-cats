@@ -9,10 +9,7 @@ export function StatBar({ label, value, color }: StatBarProps) {
     <div className="stat-bar">
       <span className="stat-bar-label">{label}</span>
       <div className="stat-bar-track">
-        <div
-          className="stat-bar-fill"
-          style={{ width: `${value}%`, backgroundColor: color }}
-        />
+        <div className="stat-bar-fill" style={{ width: `${value}%`, backgroundColor: color }} />
       </div>
     </div>
   )

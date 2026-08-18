@@ -26,7 +26,9 @@ export function ItemAvatar({ item }: ItemAvatarProps) {
       window.removeEventListener('pointerup', onUp)
       setDragPos(null)
 
-      const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.game-panel')
+      const droppedOnSuitcase = !!document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest('.game-panel')
       if (!droppedOnSuitcase) {
         usePetStore.getState().placeItem(item.id, { x: ev.clientX - 16, y: ev.clientY - 16 })
       }
@@ -38,7 +40,11 @@ export function ItemAvatar({ item }: ItemAvatarProps) {
 
   return (
     <>
-      <button className="item-button" onPointerDown={onPointerDown} title={`Drag ${item.name} into the room`}>
+      <button
+        className="item-button"
+        onPointerDown={onPointerDown}
+        title={`Drag ${item.name} into the room`}
+      >
         <span className="item-icon">{item.icon}</span>
         <span className="item-name">{item.name}</span>
       </button>

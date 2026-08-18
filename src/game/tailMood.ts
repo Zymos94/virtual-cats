@@ -58,7 +58,8 @@ function getTailSwingLocal(mood: TailMood, now: number): { x: number; y: number 
       const FLICK_PERIOD_MS = 700
       const SNAP_FRACTION = 0.18
       const t = (now % FLICK_PERIOD_MS) / FLICK_PERIOD_MS
-      const eased = t < SNAP_FRACTION ? t / SNAP_FRACTION : 1 - (t - SNAP_FRACTION) / (1 - SNAP_FRACTION)
+      const eased =
+        t < SNAP_FRACTION ? t / SNAP_FRACTION : 1 - (t - SNAP_FRACTION) / (1 - SNAP_FRACTION)
       return { x: eased * 10, y: 0 }
     }
     default:
@@ -82,6 +83,9 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   const postureDrop = pet.action === 'sitting' ? 20 : pet.action === 'sleeping' ? 24 : 0
   return {
     x: x + swing.x,
-    y: (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) + postureDrop + swing.y,
+    y:
+      (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) +
+      postureDrop +
+      swing.y,
   }
 }

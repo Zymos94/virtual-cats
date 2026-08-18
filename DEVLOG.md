@@ -60,7 +60,7 @@ one large synchronous pass, in order, roughly:
    that into the pure FSM (`src/game/behaviorFSM.ts`) to decide the next
    action/destination, then move it (`src/game/movement.ts`).
 6. A second pass resolves mutual cat-cat arrival (shared `playing` state)
-   and item consumption, since those need the *other* entity's
+   and item consumption, since those need the _other_ entity's
    already-updated state from this same tick.
 7. Step tail-chain physics for every pet (`src/game/tailPhysics.ts`'s
    `stepChain`), driven by a facing-aware anchor point
@@ -78,7 +78,7 @@ position `{x, y}`. The room has a "wall band" along the top
 (`WALL_BAND_FRACTION = 0.18` of room height, in `src/game/roomLayout.ts`)
 representing the back wall in a pseudo-3D perspective — floor-bound
 entities stay below it. Items additionally have a `height` (z-axis,
-gravity-affected) so a thrown ball can arc up *into* the wall band's
+gravity-affected) so a thrown ball can arc up _into_ the wall band's
 visual space while airborne, constrained back onto the floor plane only
 once it lands (see `src/game/itemPhysics.ts` — this exact mechanic has
 been bug-prone, see "Recent fixes" below before touching it again).
@@ -108,7 +108,7 @@ been bug-prone, see "Recent fixes" below before touching it again).
   `mousePosition.ts` — the RAF loop, viewport-size sync, generic
   click-vs-drag hook, and a mutable mouse-position singleton (avoids a
   React re-render on every mousemove).
-- `src/components/PetSprite.tsx` — cat rendering; has its *own* bespoke
+- `src/components/PetSprite.tsx` — cat rendering; has its _own_ bespoke
   pointer handler (not `useDraggable`) because it needs a three-way
   gesture: click to select / hold-in-place to pet / drag to carry.
 - `src/components/ItemSprite.tsx` / `ItemAvatar.tsx` / `CatAvatar.tsx` —
@@ -130,7 +130,7 @@ names/card layout. M8–M18 (all committed, see `git log`):
 - **M8** full-screen room, dynamic scene bounds, wall/floor visual.
 - **M9** rendering upgrade (legs, tail clip fix, head tilt toward
   attention) + a same-day follow-up fixing tail-sweep-through-body on
-  facing flip and adding mood-driven tail carriage. Then a *separate*
+  facing flip and adding mood-driven tail carriage. Then a _separate_
   fix moving tail physics into the central loop (the freezing bug
   mentioned above).
 - **M10** generic drag-and-drop (`useDraggable`).
@@ -141,7 +141,7 @@ names/card layout. M8–M18 (all committed, see `git log`):
 - Item physics redesign: pseudo-3D height/gravity axis, per-item material
   profiles, all items draggable (not just the ball).
 - Horizon/wall-behavior fix: airborne items can fly up past the wall line,
-  only constrained once landed. (This exact area needed *two more* fixes
+  only constrained once landed. (This exact area needed _two more_ fixes
   after M18 — see below. If you're touching `itemPhysics.ts`'s boundary
   logic, read that section first.)
 - **M14** attention-span utility AI: items and cats compete for a pet's
@@ -160,7 +160,7 @@ names/card layout. M8–M18 (all committed, see `git log`):
 1. **Tail clipping + "wags like a dog"** — root cause: the tail's world
    anchor point never accounted for `pet.facing`, so on a left-facing cat
    it was physically anchored near the head instead of the back (the
-   SVG's CSS mirror correctly flips the *fixed-shape* body/head/legs, but
+   SVG's CSS mirror correctly flips the _fixed-shape_ body/head/legs, but
    the tail's physics-simulated position was never part of that
    convention). Fixed by making `getTailAnchorLocal` facing-aware and
    having `PetSprite` pre-mirror the rendered segments to cancel out the
@@ -176,7 +176,7 @@ names/card layout. M8–M18 (all committed, see `git log`):
    bugs: ground friction was gated behind "fully at rest," so a bouncing
    item's ground velocity never decayed for as long as it kept bouncing;
    and a throw put 100% of swipe speed into ground velocity on top of a
-   *separate* vertical lift. Fixed: friction now applies every frame
+   _separate_ vertical lift. Fixed: friction now applies every frame
    regardless of bounce state, and only ~12% of a throw's speed
    (`GROUND_RATIO`) becomes ground travel — most becomes vertical bounce.
    A thrown item now settles near where it was thrown by default; only a
@@ -184,7 +184,7 @@ names/card layout. M8–M18 (all committed, see `git log`):
 3. **Unified draggable UI panel** — merged three separate fixed boxes
    (stats / suitcase-cats-items / breeding) into one `GamePanel` with four
    tabs, itself draggable with very high friction (`PANEL_FRICTION =
-   0.97`) so it feels grabbable, not throwable. Runs on real time in
+0.97`) so it feels grabbable, not throwable. Runs on real time in
    `tick()` regardless of `timeScale`. The old `.suitcase-panel`
    drop-target CSS class (used by `PetSprite`/`CatAvatar`/`ItemAvatar` to
    detect "dropped back in the menu") is now `.game-panel`.
@@ -203,18 +203,18 @@ names/card layout. M8–M18 (all committed, see `git log`):
    for `itemPhysics`. Also fixed a claim leak: a cat giving up on an item
    (airborne, or a missed pounce) now releases `claimedBy`.
 2. **Natural cat animation** — the big one:
-   - *Gaits*: pets carry `currentSpeed` (eased, `ACCEL`/`DECEL`) toward
+   - _Gaits_: pets carry `currentSpeed` (eased, `ACCEL`/`DECEL`) toward
      amble/trot/run targets by intent (wander vs. wanting something vs.
      zoomies), and `stridePhase` advances by distance traveled — legs
      never skate. All in `movement.ts`.
-   - *New actions*: `sitting` (idle cats park on their haunches),
+   - _New actions_: `sitting` (idle cats park on their haunches),
      `zoomies` (happy energetic cats sprint between random points,
      kittens most — chances in `behaviorFSM.ts`), `pouncing` (final
      ~90px approach to a grounded toy becomes a leap; store-side trigger
      in `tick()` next to arrival/consumption). Jumps are a generic
      `pet.jump` ballistic ground-track (`JumpState`) — zoomies also hop
      with it; render derives the visible arc, sim never leaves the floor.
-   - *Rendering* (`PetSprite` + new `catPose.ts`): two-bone IK legs
+   - _Rendering_ (`PetSprite` + new `catPose.ts`): two-bone IK legs
      (hip→knee→foot, hock/elbow bend toward the tail, far pair darkened
      via `darkenHex`), purpose-built seated silhouette cross-faded with
      the standing body (NOTE: rotating the standing ellipse into a sit
@@ -247,7 +247,7 @@ they're visible without that system:
 
 - **Floor materials**: item physics currently gets friction/bounciness
   only from the item's own `PhysicsProfile` — there's no notion of what
-  the *floor* is made of. Deferred until a maps/rooms feature exists;
+  the _floor_ is made of. Deferred until a maps/rooms feature exists;
   there's a `TODO(maps)`-style comment in `itemPhysics.ts` marking where
   it'd plug in (a floor-contributed friction/bounciness that combines
   with the item's own).

@@ -38,7 +38,9 @@ export function itemUrgency(pet: Pet, definition: ItemDefinition): number {
 // urgency factors in — the other cat just needs to be free to engage
 // (checked separately), not also unhappy.
 export function socialUrgency(pet: Pet): number {
-  return pet.needs.happiness >= SOCIAL_HAPPINESS_THRESHOLD ? 0 : SOCIAL_HAPPINESS_THRESHOLD - pet.needs.happiness
+  return pet.needs.happiness >= SOCIAL_HAPPINESS_THRESHOLD
+    ? 0
+    : SOCIAL_HAPPINESS_THRESHOLD - pet.needs.happiness
 }
 
 // Combines "how much do I want this" with "how close is it" into a single

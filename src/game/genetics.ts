@@ -14,7 +14,10 @@ const DOMINANCE = {
   size: ['medium', 'large', 'small'],
 } satisfies Record<string, readonly string[]>
 
-export function getPhenotype<T extends string>(trait: keyof typeof DOMINANCE, pair: AllelePair<T>): T {
+export function getPhenotype<T extends string>(
+  trait: keyof typeof DOMINANCE,
+  pair: AllelePair<T>,
+): T {
   const order = DOMINANCE[trait] as unknown as readonly T[]
   return order.indexOf(pair.allele1) <= order.indexOf(pair.allele2) ? pair.allele1 : pair.allele2
 }
@@ -25,7 +28,11 @@ const MUTATION_CHANCE = 0.08
 // then has a small chance of mutating to a different random value. `rng` is
 // injectable so this is testable with a fixed sequence instead of real
 // randomness.
-function inheritAllele<T extends string>(pair: AllelePair<T>, possibleValues: readonly T[], rng: () => number): T {
+function inheritAllele<T extends string>(
+  pair: AllelePair<T>,
+  possibleValues: readonly T[],
+  rng: () => number,
+): T {
   const chosen = rng() < 0.5 ? pair.allele1 : pair.allele2
   if (rng() < MUTATION_CHANCE) {
     const others = possibleValues.filter((v) => v !== chosen)
@@ -50,9 +57,21 @@ export function randomGenetics(rng: () => number = Math.random): Genetics {
 
 export function breedGenetics(a: Genetics, b: Genetics, rng: () => number = Math.random): Genetics {
   return {
-    furColor: { allele1: inheritAllele(a.furColor, FUR_COLORS, rng), allele2: inheritAllele(b.furColor, FUR_COLORS, rng) },
-    pattern: { allele1: inheritAllele(a.pattern, PATTERNS, rng), allele2: inheritAllele(b.pattern, PATTERNS, rng) },
-    eyeColor: { allele1: inheritAllele(a.eyeColor, EYE_COLORS, rng), allele2: inheritAllele(b.eyeColor, EYE_COLORS, rng) },
-    size: { allele1: inheritAllele(a.size, SIZES, rng), allele2: inheritAllele(b.size, SIZES, rng) },
+    furColor: {
+      allele1: inheritAllele(a.furColor, FUR_COLORS, rng),
+      allele2: inheritAllele(b.furColor, FUR_COLORS, rng),
+    },
+    pattern: {
+      allele1: inheritAllele(a.pattern, PATTERNS, rng),
+      allele2: inheritAllele(b.pattern, PATTERNS, rng),
+    },
+    eyeColor: {
+      allele1: inheritAllele(a.eyeColor, EYE_COLORS, rng),
+      allele2: inheritAllele(b.eyeColor, EYE_COLORS, rng),
+    },
+    size: {
+      allele1: inheritAllele(a.size, SIZES, rng),
+      allele2: inheritAllele(b.size, SIZES, rng),
+    },
   }
 }

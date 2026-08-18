@@ -88,9 +88,30 @@ function Leg({ pose, fill, stroke }: { pose: LegPose; fill: string; stroke: stri
   const d = `M ${pose.hip.x} ${pose.hip.y} L ${pose.knee.x} ${pose.knee.y} L ${pose.foot.x} ${pose.foot.y}`
   return (
     <g opacity={pose.opacity}>
-      <path d={d} fill="none" stroke={stroke} strokeWidth={6.2} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={d} fill="none" stroke={fill} strokeWidth={3.8} strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={pose.foot.x} cy={pose.foot.y} r={2.3} fill={fill} stroke={stroke} strokeWidth={1} />
+      <path
+        d={d}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={6.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d={d}
+        fill="none"
+        stroke={fill}
+        strokeWidth={3.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx={pose.foot.x}
+        cy={pose.foot.y}
+        r={2.3}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={1}
+      />
     </g>
   )
 }
@@ -116,12 +137,22 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   // tailSegments subscription updates each tick), so pose and gaze values
   // ease here, purely cosmetically — the simulation itself only knows the
   // discrete action states.
-  const easeRef = useRef({ sit: 0, lie: 0, shiftX: 0, shiftY: 0, pupilX: 0, pupilY: 0, tilt: 0, lastNow: performance.now() })
+  const easeRef = useRef({
+    sit: 0,
+    lie: 0,
+    shiftX: 0,
+    shiftY: 0,
+    pupilX: 0,
+    pupilY: 0,
+    tilt: 0,
+    lastNow: performance.now(),
+  })
   const eased = easeRef.current
   const now = performance.now()
   const dt = clamp((now - eased.lastNow) / 1000, 0, 0.1)
   eased.lastNow = now
-  const ease = (current: number, target: number, rate: number) => current + (target - current) * Math.min(1, dt * rate)
+  const ease = (current: number, target: number, rate: number) =>
+    current + (target - current) * Math.min(1, dt * rate)
 
   eased.sit = ease(eased.sit, pet.action === 'sitting' ? 1 : 0, 6)
   eased.lie = ease(eased.lie, pet.action === 'sleeping' ? 1 : 0, 5)
@@ -151,7 +182,15 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
     hopPx = hop * Math.min(24, 8 + jumpDist * 0.16)
   }
 
-  const legs = computeLegPoses({ stridePhase: pet.stridePhase, speed01, moving01, sit, lie, hop, bob })
+  const legs = computeLegPoses({
+    stridePhase: pet.stridePhase,
+    speed01,
+    moving01,
+    sit,
+    lie,
+    hop,
+    bob,
+  })
 
   // Gaze: eyes track a resolved target — pupils inside the eye, the eyes
   // themselves sliding across the face (a fake head-turn that reads as
@@ -179,7 +218,11 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   eased.shiftY = ease(eased.shiftY, clamp(gazeDy / 70, -1, 1) * 1.6 * gazeStrength, 8)
   eased.pupilX = ease(eased.pupilX, clamp(gazeDx / 40, -1, 1) * 1.05 * gazeStrength, 10)
   eased.pupilY = ease(eased.pupilY, clamp(gazeDy / 60, -1, 1) * 0.85 * gazeStrength, 10)
-  eased.tilt = ease(eased.tilt, clamp((gazeDy / 80) * MAX_HEAD_TILT_DEG, -MAX_HEAD_TILT_DEG, MAX_HEAD_TILT_DEG) * gazeStrength, 8)
+  eased.tilt = ease(
+    eased.tilt,
+    clamp((gazeDy / 80) * MAX_HEAD_TILT_DEG, -MAX_HEAD_TILT_DEG, MAX_HEAD_TILT_DEG) * gazeStrength,
+    8,
+  )
 
   const isHeld = pet.action === 'held'
   const isPetting = pet.action === 'petting'
@@ -220,7 +263,8 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         window.clearTimeout(holdTimer)
         usePetStore.getState().startDragPet(pet.id)
       }
-      if (moved) usePetStore.getState().dragPetTo(pet.id, ev.clientX - grabOffsetX, ev.clientY - grabOffsetY)
+      if (moved)
+        usePetStore.getState().dragPetTo(pet.id, ev.clientX - grabOffsetX, ev.clientY - grabOffsetY)
     }
 
     function onUp(ev: PointerEvent) {
@@ -231,7 +275,9 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
       if (petting) {
         usePetStore.getState().endPetting(pet.id)
       } else if (moved) {
-        const droppedOnSuitcase = !!document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.game-panel')
+        const droppedOnSuitcase = !!document
+          .elementFromPoint(ev.clientX, ev.clientY)
+          ?.closest('.game-panel')
         if (droppedOnSuitcase) {
           usePetStore.getState().putPetInSuitcase(pet.id)
         } else {
@@ -249,7 +295,14 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
   return (
     <div
-      className={['pet-sprite', selected && 'selected', isHeld && 'dragging', isPetting && 'petting'].filter(Boolean).join(' ')}
+      className={[
+        'pet-sprite',
+        selected && 'selected',
+        isHeld && 'dragging',
+        isPetting && 'petting',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={{ left: pet.position.x, top: pet.position.y }}
       title={pet.name}
       onPointerDown={onPointerDown}
@@ -258,7 +311,11 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         width={SVG_WIDTH}
         height={SVG_HEIGHT}
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-        style={{ transform: `scale(${xScale}, ${scale})`, transformOrigin: '50% 50%', overflow: 'visible' }}
+        style={{
+          transform: `scale(${xScale}, ${scale})`,
+          transformOrigin: '50% 50%',
+          overflow: 'visible',
+        }}
       >
         {/* Ground shadow stays on the floor while everything else lifts
             with a hop — the separation is what sells the jump. */}
@@ -274,13 +331,23 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
         <g style={{ transform: `translateY(${-hopPx}px)` }}>
           <g>
             {tailLocal.map((seg, i) => (
-              <circle key={i} cx={seg.x} cy={seg.y} r={4 - i * 0.4} fill={body} stroke={stroke} strokeWidth={1} />
+              <circle
+                key={i}
+                cx={seg.x}
+                cy={seg.y}
+                r={4 - i * 0.4}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={1}
+              />
             ))}
           </g>
 
-          {legs.filter((l) => !l.isNear).map((l, i) => (
-            <Leg key={`far-${i}`} pose={l} fill={farLegFill} stroke={stroke} />
-          ))}
+          {legs
+            .filter((l) => !l.isNear)
+            .map((l, i) => (
+              <Leg key={`far-${i}`} pose={l} fill={farLegFill} stroke={stroke} />
+            ))}
 
           {/* Body. Standing (a horizontal ellipse, squashing down onto the
               floor as the cat lies asleep) cross-fades with a purpose-made
@@ -288,9 +355,22 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               upright chest — rather than trying to rotate the standing
               shape into a sit, which never read as more than a tilted
               blob at this size. */}
-          <g style={{ transform: `translateY(${bob + lie * 6}px) scale(1, ${1 - 0.2 * lie})`, transformOrigin: '32px 47px' }}>
+          <g
+            style={{
+              transform: `translateY(${bob + lie * 6}px) scale(1, ${1 - 0.2 * lie})`,
+              transformOrigin: '32px 47px',
+            }}
+          >
             <g opacity={1 - sit}>
-              <ellipse cx={32} cy={34} rx={20} ry={13} fill={body} stroke={stroke} strokeWidth={2} />
+              <ellipse
+                cx={32}
+                cy={34}
+                rx={20}
+                ry={13}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={2}
+              />
               {spotted &&
                 SPOT_POSITIONS.map((spot, i) => (
                   <circle key={i} cx={spot.x} cy={spot.y} r={spot.r} fill={stroke} opacity={0.6} />
@@ -299,21 +379,48 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
             {sit > 0.02 && (
               <g opacity={sit}>
                 <circle cx={27} cy={44} r={10} fill={body} stroke={stroke} strokeWidth={2} />
-                <ellipse cx={40} cy={33} rx={12} ry={14} transform="rotate(-12 40 33)" fill={body} stroke={stroke} strokeWidth={2} />
+                <ellipse
+                  cx={40}
+                  cy={33}
+                  rx={12}
+                  ry={14}
+                  transform="rotate(-12 40 33)"
+                  fill={body}
+                  stroke={stroke}
+                  strokeWidth={2}
+                />
                 {spotted && <circle cx={27} cy={41} r={2.5} fill={stroke} opacity={0.6} />}
               </g>
             )}
           </g>
 
-          {legs.filter((l) => l.isNear).map((l, i) => (
-            <Leg key={`near-${i}`} pose={l} fill={body} stroke={stroke} />
-          ))}
+          {legs
+            .filter((l) => l.isNear)
+            .map((l, i) => (
+              <Leg key={`near-${i}`} pose={l} fill={body} stroke={stroke} />
+            ))}
 
           {/* Front paws tucked visible under the chest when lying. */}
           {lie > 0.05 && (
             <g opacity={lie}>
-              <ellipse cx={42} cy={51.5} rx={3.5} ry={2} fill={body} stroke={stroke} strokeWidth={1} />
-              <ellipse cx={50} cy={51.5} rx={3.5} ry={2} fill={body} stroke={stroke} strokeWidth={1} />
+              <ellipse
+                cx={42}
+                cy={51.5}
+                rx={3.5}
+                ry={2}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={1}
+              />
+              <ellipse
+                cx={50}
+                cy={51.5}
+                rx={3.5}
+                ry={2}
+                fill={body}
+                stroke={stroke}
+                strokeWidth={1}
+              />
             </g>
           )}
 
@@ -346,10 +453,30 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               }
               return (
                 <g key={ex}>
-                  <ellipse cx={cx} cy={cy} rx={3} ry={2.7} fill="#f8f5ec" stroke={stroke} strokeWidth={0.7} />
+                  <ellipse
+                    cx={cx}
+                    cy={cy}
+                    rx={3}
+                    ry={2.7}
+                    fill="#f8f5ec"
+                    stroke={stroke}
+                    strokeWidth={0.7}
+                  />
                   <circle cx={cx + eased.pupilX} cy={cy + eased.pupilY} r={1.9} fill={eye} />
-                  <ellipse cx={cx + eased.pupilX} cy={cy + eased.pupilY} rx={0.65} ry={1.5} fill="#1e1e1e" />
-                  <circle cx={cx + eased.pupilX - 0.6} cy={cy + eased.pupilY - 0.7} r={0.45} fill="#fff" opacity={0.85} />
+                  <ellipse
+                    cx={cx + eased.pupilX}
+                    cy={cy + eased.pupilY}
+                    rx={0.65}
+                    ry={1.5}
+                    fill="#1e1e1e"
+                  />
+                  <circle
+                    cx={cx + eased.pupilX - 0.6}
+                    cy={cy + eased.pupilY - 0.7}
+                    r={0.45}
+                    fill="#fff"
+                    opacity={0.85}
+                  />
                 </g>
               )
             })}
