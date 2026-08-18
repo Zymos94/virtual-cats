@@ -62,8 +62,16 @@ function getTailSwingLocal(mood: TailMood, now: number): { x: number; y: number 
     case 'agitated': {
       // A real flick, not a symmetric wag: a fast snap out followed by a
       // slower relaxed return, repeating — not a smooth back-and-forth.
-      const FLICK_PERIOD_MS = 700
-      const SNAP_FRACTION = 0.18
+      // The snap needs real *time*, not just a short period — this only
+      // moves the anchor; stepChain's per-segment easing (tailPhysics.ts,
+      // EASE=0.35, applied once per real frame) takes on the order of
+      // 250-350ms to carry a sudden anchor movement all the way down 6
+      // segments to the tip. An earlier version's snap lasted ~125ms
+      // (18% of a 700ms period) — far too brief for the motion to ever
+      // reach past the first segment or two before reversing, so the
+      // flick only ever visibly moved the base, never the tip.
+      const FLICK_PERIOD_MS = 1000
+      const SNAP_FRACTION = 0.4
       const t = (now % FLICK_PERIOD_MS) / FLICK_PERIOD_MS
       const eased =
         t < SNAP_FRACTION ? t / SNAP_FRACTION : 1 - (t - SNAP_FRACTION) / (1 - SNAP_FRACTION)
@@ -81,8 +89,8 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   // small additional offset layered on top of the mood/posture system
   // above rather than replacing it. Every other gait (walk/trot/gallop)
   // carries 'level', so this is a no-op for them.
-  const carriage = selectGait(pet).tailCarriage
-  const carriageAdjust = carriage === 'high' ? -7 : carriage === 'low' ? 9 : 0
+  const gait = selectGait(pet)
+  const carriageAdjust = gait.tailCarriage === 'high' ? -7 : gait.tailCarriage === 'low' ? 9 : 0
   // Mirror the attach point itself around the sprite's own center when
   // facing left, so it stays at the cat's back — the one thing about the
   // tail that actually does need to know about facing, since (unlike the
@@ -104,8 +112,28 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   // rests on the floor beside the cat instead of floating mid-air. The
   // chain's own easing carries the segments there smoothly. Held is the
   // same idea for a different reason: gravity, not a resting haunch, pulls
-  // the tail down and loose while the cat dangles.
-  const postureDrop = seated ? 20 : pet.action === 'sleeping' ? 24 : pet.action === 'held' ? 22 : 0
+  // the tail down and loose while the cat dangles. Stretching raises the
+  // rear instead (the purpose-built stretch silhouette arches the rump up
+  // well above where the standing body sits) — the tail needs to follow it
+  // up or it visibly hangs off the back of a body that's no longer there.
+  const postureDrop = seated
+    ? 20
+    : pet.action === 'sleeping'
+      ? 24
+      : pet.action === 'held'
+        ? 22
+        : pet.action === 'stretching'
+          ? -6
+          : 0
+  // Gait-driven crouch/rise (a slink lowers the whole body, a strut lifts
+  // it — see gaits.ts's bodyHeight) shifts the body's actual rendered
+  // height in PetSprite.tsx, but that's a render-only cosmetic value the
+  // store never otherwise sees — without this, the tail anchor stays put
+  // while the body it's meant to attach to visibly moves, reading as the
+  // tail disconnecting from the body mid-gait. moving01 mirrors
+  // PetSprite's own formula so this tracks what's actually on screen.
+  const moving01 = Math.min(1, pet.currentSpeed / 30)
+  const gaitHeightOffset = gait.bodyHeight * moving01
   // Tail-wrap: once seated, the tail curls forward around the front paws
   // rather than hanging straight down — ramps in over the first ~1.2s of
   // sitting rather than snapping straight to the wrapped position. Added
@@ -120,6 +148,7 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
       (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) +
       postureDrop +
       carriageAdjust +
+      gaitHeightOffset +
       swing.y,
   }
 }

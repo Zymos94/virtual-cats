@@ -1,5 +1,6 @@
 import type { Needs, Pet } from '../types/pet'
 import type { ItemCategory, ItemDefinition } from '../types/item'
+import type { MouseState } from '../types/mouse'
 
 const WANT_THRESHOLD = 60
 const SOCIAL_HAPPINESS_THRESHOLD = 70
@@ -31,20 +32,30 @@ function needKeyForCategory(category: ItemCategory): keyof Needs {
 // How much a pet currently wants a given item — 0 if the relevant need is
 // already satisfied, otherwise larger the more urgent it is. 'prey' (the
 // mouse, mid-drop before it converts to an autonomous Mouse — see
-// petStore.tick()) and 'hole' (furniture a cat never walks up to and
-// uses) are excluded outright rather than falling into a needKeyForCategory
-// default.
+// petStore.tick()) is excluded outright rather than falling into a
+// needKeyForCategory default.
 export function itemUrgency(pet: Pet, definition: ItemDefinition): number {
-  if (definition.category === 'prey' || definition.category === 'hole') return 0
+  if (definition.category === 'prey') return 0
   const value = pet.needs[needKeyForCategory(definition.category)]
   return value >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - value
 }
 
-// How much a pet wants to chase a mouse it's noticed — the same play
-// drive a toy satisfies, since batting around a live mouse scratches the
-// same itch as a ball.
-export function mouseUrgency(pet: Pet): number {
-  return pet.needs.happiness >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - pet.needs.happiness
+// How eager a pet is to chase a particular mouse right now — depends on
+// the mouse's own state, not just the cat's mood. A sneaking mouse mostly
+// reads as "not worth the effort" (scaled well down, and only through the
+// normal happiness-driven want) — the whole point of sneaking is to stay
+// beneath notice. The moment it's fleeing, that's flipped: a visibly
+// bolting creature is hard for *any* cat to ignore, so this jumps to a
+// flat, mood-independent value — the double-edged sword of escaping the
+// one cat that spooked it by running, which is exactly what's likely to
+// pull in every *other* nearby cat too.
+const MOUSE_SNEAKING_URGENCY_SCALE = 0.4
+const MOUSE_FLEEING_URGENCY = 45
+
+export function mouseUrgency(pet: Pet, mouseState: MouseState): number {
+  if (mouseState === 'fleeing') return MOUSE_FLEEING_URGENCY
+  const base = pet.needs.happiness >= WANT_THRESHOLD ? 0 : WANT_THRESHOLD - pet.needs.happiness
+  return base * MOUSE_SNEAKING_URGENCY_SCALE
 }
 
 // How much a pet currently wants company. Only the seeking pet's own

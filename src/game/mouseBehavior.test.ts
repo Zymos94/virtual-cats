@@ -4,11 +4,13 @@ import {
   MOUSE_CALM_MS,
   MOUSE_DETECT_RADIUS,
   MOUSE_STALK_DETECT_RADIUS,
+  scareMouse,
   updateMouseBehavior,
 } from './mouseBehavior'
 
 const BOUNDS = { width: 1200, height: 800 }
 const TOP_MARGIN = 160
+const HOLE = { x: 50, y: 100 }
 
 function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
   return {
@@ -17,6 +19,7 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     destination: null,
     state: 'sneaking',
     facing: 'right',
+    livesRemaining: 4,
     actionStartedAt: 0,
     lastThreatenedAt: 0,
     claimedBy: null,
@@ -37,7 +40,7 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: true,
       nearestThreatPosition: { x: 400, y: 400 },
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next).toBe(mouse)
   })
@@ -52,57 +55,71 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: true,
       nearestThreatPosition: null,
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next).toBe(mouse)
   })
 
-  it('flees when spotted', () => {
-    const mouse = makeMouse()
+  it('flees away from the threat when spotted with lives to spare — not toward the hole', () => {
+    const mouse = makeMouse({ position: { x: 400, y: 400 }, livesRemaining: 4 })
     const next = updateMouseBehavior(mouse, {
       now: 1000,
       sceneBounds: BOUNDS,
       topMargin: TOP_MARGIN,
       spotted: true,
       nearestThreatPosition: { x: 500, y: 400 },
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next.state).toBe('fleeing')
     expect(next.lastThreatenedAt).toBe(1000)
     expect(next.destination).not.toBeNull()
+    expect(next.destination).not.toEqual(HOLE)
+    expect(next.livesRemaining).toBe(3)
   })
 
-  it('heads straight for the mouse hole when spotted and one exists', () => {
-    const mouse = makeMouse()
-    const hole = { x: 50, y: 100 }
+  it('heads straight for the mouse hole once a scare uses up its last life', () => {
+    const mouse = makeMouse({ livesRemaining: 1 })
     const next = updateMouseBehavior(mouse, {
       now: 1000,
       sceneBounds: BOUNDS,
       topMargin: TOP_MARGIN,
       spotted: true,
       nearestThreatPosition: { x: 500, y: 400 },
-      holePosition: hole,
+      holePosition: HOLE,
     })
-    expect(next.destination).toEqual(hole)
+    expect(next.livesRemaining).toBe(0)
+    expect(next.destination).toEqual(HOLE)
   })
 
-  it('keeps re-aiming at the hole every tick while fleeing, in case it moves', () => {
-    const mouse = makeMouse({
-      state: 'fleeing',
-      lastThreatenedAt: 900,
-      destination: { x: 1, y: 1 },
-    })
-    const hole = { x: 60, y: 90 }
+  it('does not spend a life on a repeat scare within the same flee episode', () => {
+    const mouse = makeMouse({ state: 'fleeing', livesRemaining: 2, destination: { x: 1, y: 1 } })
     const next = updateMouseBehavior(mouse, {
       now: 1000,
       sceneBounds: BOUNDS,
       topMargin: TOP_MARGIN,
-      spotted: false,
-      nearestThreatPosition: null,
-      holePosition: hole,
+      spotted: true,
+      nearestThreatPosition: { x: 500, y: 400 },
+      holePosition: HOLE,
     })
-    expect(next.destination).toEqual(hole)
-    expect(next.state).toBe('fleeing')
+    expect(next.livesRemaining).toBe(2)
+    expect(next.lastThreatenedAt).toBe(1000)
+  })
+
+  it('keeps heading to its already-chosen destination while still being chased, not re-rolling every tick', () => {
+    const mouse = makeMouse({
+      state: 'fleeing',
+      lastThreatenedAt: 900,
+      destination: { x: 111, y: 222 },
+    })
+    const next = updateMouseBehavior(mouse, {
+      now: 1000,
+      sceneBounds: BOUNDS,
+      topMargin: TOP_MARGIN,
+      spotted: true,
+      nearestThreatPosition: { x: 500, y: 400 },
+      holePosition: HOLE,
+    })
+    expect(next.destination).toEqual({ x: 111, y: 222 })
   })
 
   it('calms back down to sneaking after being unbothered long enough', () => {
@@ -113,10 +130,23 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: false,
       nearestThreatPosition: null,
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next.state).toBe('sneaking')
     expect(next.destination).toBeNull()
+  })
+
+  it('keeps its lives-remaining count across a calm-down — spooks accumulate for its whole life', () => {
+    const mouse = makeMouse({ state: 'fleeing', lastThreatenedAt: 0, livesRemaining: 2 })
+    const next = updateMouseBehavior(mouse, {
+      now: MOUSE_CALM_MS + 1,
+      sceneBounds: BOUNDS,
+      topMargin: TOP_MARGIN,
+      spotted: false,
+      nearestThreatPosition: null,
+      holePosition: HOLE,
+    })
+    expect(next.livesRemaining).toBe(2)
   })
 
   it('does not calm down before the timeout elapses', () => {
@@ -127,7 +157,7 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: false,
       nearestThreatPosition: null,
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next.state).toBe('fleeing')
   })
@@ -140,7 +170,7 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: false,
       nearestThreatPosition: null,
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next.destination).not.toBeNull()
   })
@@ -153,12 +183,12 @@ describe('updateMouseBehavior', () => {
       topMargin: TOP_MARGIN,
       spotted: false,
       nearestThreatPosition: null,
-      holePosition: null,
+      holePosition: HOLE,
     })
     expect(next.destination).toBeNull()
   })
 
-  it('flees away from the threat when no hole exists, not toward it', () => {
+  it('picks an away-from-threat sneak point biased away from the nearest cat', () => {
     const mouse = makeMouse({ position: { x: 400, y: 400 } })
     const threatPos = { x: 420, y: 400 }
     // The candidate destination is random — run many trials to make sure
@@ -170,7 +200,7 @@ describe('updateMouseBehavior', () => {
         topMargin: TOP_MARGIN,
         spotted: true,
         nearestThreatPosition: threatPos,
-        holePosition: null,
+        holePosition: HOLE,
       })
       const distNow = Math.hypot(mouse.position.x - threatPos.x, mouse.position.y - threatPos.y)
       const distNext = Math.hypot(
@@ -179,6 +209,15 @@ describe('updateMouseBehavior', () => {
       )
       expect(distNext).toBeGreaterThanOrEqual(distNow - 1e-6)
     }
+  })
+})
+
+describe('scareMouse', () => {
+  it('is what a pounce/chuck reuses — a fresh scare from any non-fleeing state spends a life', () => {
+    const mouse = makeMouse({ state: 'held', livesRemaining: 3 })
+    const next = scareMouse(mouse, 1000, BOUNDS, TOP_MARGIN, { x: 0, y: 0 }, HOLE)
+    expect(next.state).toBe('fleeing')
+    expect(next.livesRemaining).toBe(2)
   })
 })
 

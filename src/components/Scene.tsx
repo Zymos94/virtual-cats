@@ -4,17 +4,20 @@ import type { Mouse } from '../types/mouse'
 import { PetSprite } from './PetSprite'
 import { ItemSprite } from './ItemSprite'
 import { MouseSprite } from './MouseSprite'
+import { MouseHoleSprite } from './MouseHoleSprite'
 
 interface SceneProps {
   pets: Pet[]
   placedItems: PlacedItem[]
   mice: Mouse[]
+  sceneBounds: { width: number; height: number }
   selectedPetId: string | null
 }
 
-export function Scene({ pets, placedItems, mice, selectedPetId }: SceneProps) {
+export function Scene({ pets, placedItems, mice, sceneBounds, selectedPetId }: SceneProps) {
   return (
     <div className="scene">
+      <MouseHoleSprite sceneBounds={sceneBounds} />
       {placedItems.map((item) => (
         <ItemSprite key={item.id} placedItem={item} />
       ))}

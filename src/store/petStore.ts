@@ -24,11 +24,14 @@ import { STARTER_AGE_MS } from '../game/lifeStage'
 import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
 import {
   MOUSE_DETECT_RADIUS,
+  MOUSE_MAX_LIVES,
+  MOUSE_MIN_LIVES,
   MOUSE_STALK_DETECT_RADIUS,
+  scareMouse,
   updateMouseBehavior,
 } from '../game/mouseBehavior'
 import { moveMouse } from '../game/mouseMovement'
-import { WALL_BAND_FRACTION } from '../game/roomLayout'
+import { getMouseHolePosition, WALL_BAND_FRACTION } from '../game/roomLayout'
 
 interface PetStore {
   pets: Record<string, Pet>
@@ -207,6 +210,8 @@ function makeMouse(id: string, position: { x: number; y: number }, now: number):
     destination: null,
     state: 'sneaking',
     facing: Math.random() < 0.5 ? 'left' : 'right',
+    livesRemaining:
+      MOUSE_MIN_LIVES + Math.floor(Math.random() * (MOUSE_MAX_LIVES - MOUSE_MIN_LIVES + 1)),
     actionStartedAt: now,
     lastThreatenedAt: 0,
     claimedBy: null,
@@ -332,34 +337,10 @@ function sanitizeLoadedPet(pet: Pet): Pet {
   }
 }
 
-// One mouse hole against the (top) wall by default, so there's always
-// somewhere for a mouse to escape to without the player needing to
-// remember to place one themselves first — same as the starter cats, it's
-// just a normal placeable item (see ITEM_DEFINITIONS's 'mousehole') that
-// happens to be pre-placed; the player can drag it elsewhere or add more.
-function makeStarterMouseHole(bounds: { width: number; height: number }): PlacedItem {
-  const id = nanoid()
-  return {
-    id,
-    itemTypeId: 'mousehole',
-    // Exactly on the wall/floor line — the arch itself (see
-    // ItemSprite.tsx's 'hole' rendering) is anchored by its flat bottom
-    // edge to this same point, so the whole tall dome extends *up* into
-    // the wall band from here, reading as a hole cut into the wall.
-    position: { x: 70, y: bounds.height * WALL_BAND_FRACTION },
-    height: 0,
-    velocity: { x: 0, y: 0 },
-    verticalVelocity: 0,
-    claimedBy: null,
-    held: false,
-  }
-}
-
 function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<string, PlacedItem> } {
   const saved = loadFromLocalStorage()
   if (!saved || Object.keys(saved.pets).length === 0) {
-    const hole = makeStarterMouseHole({ width: window.innerWidth, height: window.innerHeight })
-    return { pets: freshStarterPets(), sceneItems: { [hole.id]: hole } }
+    return { pets: freshStarterPets(), sceneItems: {} }
   }
 
   const pets: Record<string, Pet> = {}
@@ -382,7 +363,7 @@ function loadInitialState(): { pets: Record<string, Pet>; sceneItems: Record<str
 
 const initialState = loadInitialState()
 
-export const usePetStore = create<PetStore>((set, get) => ({
+export const usePetStore = create<PetStore>((set) => ({
   pets: initialState.pets,
   sceneItems: initialState.sceneItems,
   mice: {},
@@ -481,16 +462,10 @@ export const usePetStore = create<PetStore>((set, get) => ({
         }
       }
 
-      // Live position of a mouse hole, if the player still has one placed
-      // — a fleeing mouse's goal, and its escape/despawn condition below.
-      let holePosition: { x: number; y: number } | null = null
-      for (const itemId in sceneItems) {
-        const definition = ITEM_DEFINITIONS.find((d) => d.id === sceneItems[itemId].itemTypeId)
-        if (definition?.category === 'hole') {
-          holePosition = sceneItems[itemId].position
-          break
-        }
-      }
+      // A fixed room feature (see roomLayout.ts), not something the player
+      // places — always exists, so a fleeing mouse always has a goal and
+      // an escape/despawn condition (below) to aim for.
+      const holePosition = getMouseHolePosition(state.sceneBounds)
 
       // Mice are fully autonomous — their own AI runs independently of any
       // cat, using last tick's cat positions (one tick of lag, imperceptible)
@@ -602,6 +577,18 @@ export const usePetStore = create<PetStore>((set, get) => ({
             },
             state.sceneBounds,
           )
+          // scareMouse decides the same fresh-scare/lives/away-vs-hole
+          // logic being caught-and-chucked would from any other scare —
+          // its destination takes over once this hop lands (moveMouse
+          // ignores `destination` while a jump is in flight).
+          const scared = scareMouse(
+            heldMouse,
+            now,
+            state.sceneBounds,
+            mouseTopMargin,
+            pet.position,
+            holePosition,
+          )
           // "usually" keeps pursuing, per the design brief — not always.
           // If not, release the claim too, or nobody could ever target
           // this mouse again once it's off chasing freely.
@@ -609,12 +596,9 @@ export const usePetStore = create<PetStore>((set, get) => ({
           mice = {
             ...mice,
             [heldMouseId!]: {
-              ...heldMouse,
-              state: 'fleeing',
+              ...scared,
               heldBy: null,
               claimedBy: keepChasing ? id : null,
-              lastThreatenedAt: now,
-              destination: null,
               jump: {
                 from: pet.position,
                 to: chuckTo,
@@ -656,21 +640,25 @@ export const usePetStore = create<PetStore>((set, get) => ({
           }
         }
 
-        const ownMouseUrgency = mouseUrgency(pet)
-        if (ownMouseUrgency > 0) {
-          for (const mouseId in mice) {
-            if (mouseClaimed.has(mouseId)) continue
-            const mouse = mice[mouseId]
-            if (mouse.state === 'held') continue
-            const distance = Math.hypot(
-              mouse.position.x - pet.position.x,
-              mouse.position.y - pet.position.y,
-            )
-            const score = attentionScore(ownMouseUrgency, distance, pet.attentionSpan)
-            if (score > bestScore) {
-              bestScore = score
-              bestTarget = { kind: 'mouse', id: mouseId, position: mouse.position }
-            }
+        // Urgency depends on the mouse's own state, not just this cat's
+        // mood — a fleeing mouse is a flat, hard-to-ignore draw regardless
+        // of happiness (see attention.ts's mouseUrgency), so this can't be
+        // hoisted out of the loop as a single per-pet value the way item/
+        // social urgency are.
+        for (const mouseId in mice) {
+          if (mouseClaimed.has(mouseId)) continue
+          const mouse = mice[mouseId]
+          if (mouse.state === 'held') continue
+          const urgency = mouseUrgency(pet, mouse.state)
+          if (urgency <= 0) continue
+          const distance = Math.hypot(
+            mouse.position.x - pet.position.x,
+            mouse.position.y - pet.position.y,
+          )
+          const score = attentionScore(urgency, distance, pet.attentionSpan)
+          if (score > bestScore) {
+            bestScore = score
+            bestTarget = { kind: 'mouse', id: mouseId, position: mouse.position }
           }
         }
 
@@ -857,7 +845,14 @@ export const usePetStore = create<PetStore>((set, get) => ({
               }
               mice = {
                 ...mice,
-                [targetMouseId]: { ...target, state: 'fleeing', lastThreatenedAt: now },
+                [targetMouseId]: scareMouse(
+                  target,
+                  now,
+                  state.sceneBounds,
+                  mouseTopMargin,
+                  decided.position,
+                  holePosition,
+                ),
               }
             }
           }
@@ -925,6 +920,14 @@ export const usePetStore = create<PetStore>((set, get) => ({
           const missedIt =
             !targetMouse ||
             targetMouse.state === 'held' ||
+            // Mid-chuck-hop: its eased jump barely moves it the instant it's
+            // thrown, so the FSM re-targeting its live (near-stationary)
+            // position would otherwise let the cat "arrive" and re-catch it
+            // on the very next tick — never actually chasing it. Treating an
+            // airborne mouse as an automatic miss forces the hop to land
+            // (MOUSE_CHUCK_DURATION_MS) and real fleeing to start before it
+            // can be caught again.
+            targetMouse.jump !== null ||
             Math.hypot(
               targetMouse.position.x - finalPet.position.x,
               targetMouse.position.y - finalPet.position.y,
@@ -1032,7 +1035,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
               },
             }
           }
-        } else if (mouse.state === 'fleeing' && holePosition) {
+        } else if (mouse.state === 'fleeing') {
           const distToHole = Math.hypot(
             mouse.position.x - holePosition.x,
             mouse.position.y - holePosition.y,
@@ -1335,10 +1338,9 @@ export const usePetStore = create<PetStore>((set, get) => ({
   resetGame: () => {
     clearSavedGame()
     stopAllLoops()
-    const hole = makeStarterMouseHole(get().sceneBounds)
     set({
       pets: freshStarterPets(),
-      sceneItems: { [hole.id]: hole },
+      sceneItems: {},
       mice: {},
       tailSegments: {},
       selectedPetId: null,

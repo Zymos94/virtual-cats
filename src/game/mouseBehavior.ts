@@ -17,6 +17,11 @@ export const MOUSE_STALK_DETECT_RADIUS = 65
 // How long a fleeing mouse can go without anything threatening it before
 // it calms back down to cautious sneaking.
 export const MOUSE_CALM_MS = 9000
+// Rolled once at spawn — how many scares a mouse shrugs off (just running
+// away from whatever spooked it) before it gives up and makes a break for
+// the mouse hole instead.
+export const MOUSE_MIN_LIVES = 2
+export const MOUSE_MAX_LIVES = 7
 
 const SNEAK_PAUSE_MS = 1200
 const SNEAK_MARGIN = 40
@@ -31,12 +36,12 @@ export interface MouseTickContext {
   // accounts for that per-cat, not just distance to the closest one.
   spotted: boolean
   // The nearest cat's position regardless of whether it's within
-  // detection range — used to pick a flee direction away from it when
-  // there's no mouse hole to run to instead. Null only when the room has
-  // no cats in it at all.
+  // detection range — used to pick a flee direction away from it.
+  // Null only when the room has no cats in it at all.
   nearestThreatPosition: { x: number; y: number } | null
-  // Live position of a mouse hole in the room, if one exists.
-  holePosition: { x: number; y: number } | null
+  // The mouse hole is a fixed room feature (see roomLayout.ts) — always
+  // exists, unlike the old placeable-item version.
+  holePosition: { x: number; y: number }
 }
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -62,32 +67,68 @@ function pickSneakPoint(
   }
 }
 
+// Turns a mouse scared (by being spotted while sneaking, pounced at, or
+// just chucked out of a cat's mouth) into a fleeing one. Shared by
+// updateMouseBehavior below (the "spotted while sneaking" path) and
+// petStore.tick()'s pounce-trigger and chuck logic — those are
+// cross-entity (they mutate a cat too) so they can't go through this pure
+// function directly, but the fear/lives/destination logic is identical
+// either way, so it lives in one place. A scare mid-flee (already
+// 'fleeing') doesn't cost another life or change where it's headed — it's
+// the same scare episode, not a new one.
+export function scareMouse(
+  mouse: Mouse,
+  now: number,
+  sceneBounds: { width: number; height: number },
+  topMargin: number,
+  threatPosition: { x: number; y: number } | null,
+  holePosition: { x: number; y: number },
+): Mouse {
+  const freshScare = mouse.state !== 'fleeing'
+  if (!freshScare) {
+    return { ...mouse, lastThreatenedAt: now }
+  }
+  const livesRemaining = mouse.livesRemaining - 1
+  const panicked = livesRemaining <= 0
+  return {
+    ...mouse,
+    state: 'fleeing',
+    livesRemaining,
+    lastThreatenedAt: now,
+    destination: panicked
+      ? holePosition
+      : pickSneakPoint(sceneBounds, topMargin, mouse.position, threatPosition),
+  }
+}
+
 // Decides what a mouse should be doing next. Pure function, same shape as
 // updatePetBehavior: Mouse -> Mouse, no side effects. Catching, holding,
 // and chucking are cross-entity (they mutate a cat too) so those live in
-// petStore.tick() instead, same reasoning as a cat's own pounce/consume.
+// petStore.tick() instead (via scareMouse above), same reasoning as a
+// cat's own pounce/consume.
 export function updateMouseBehavior(mouse: Mouse, ctx: MouseTickContext): Mouse {
   if (mouse.state === 'held') return mouse
   if (mouse.jump) return mouse // mid-chuck-hop — let it land before deciding anything
 
   if (ctx.spotted) {
-    return {
-      ...mouse,
-      state: 'fleeing',
-      lastThreatenedAt: ctx.now,
-      destination:
-        ctx.holePosition ??
-        pickSneakPoint(ctx.sceneBounds, ctx.topMargin, mouse.position, ctx.nearestThreatPosition),
-    }
+    return scareMouse(
+      mouse,
+      ctx.now,
+      ctx.sceneBounds,
+      ctx.topMargin,
+      ctx.nearestThreatPosition,
+      ctx.holePosition,
+    )
   }
 
   if (mouse.state === 'fleeing') {
     if (ctx.now - mouse.lastThreatenedAt > MOUSE_CALM_MS) {
       return { ...mouse, state: 'sneaking', destination: null, actionStartedAt: ctx.now }
     }
-    // Keep re-aiming at the hole every tick in case it gets dragged
-    // elsewhere mid-chase, same as a cat re-aiming at a rolling ball.
-    if (ctx.holePosition) return { ...mouse, destination: ctx.holePosition }
+    // Not currently spotted but still within the calm window — keep going
+    // wherever it was already headed. The hole never moves (it's a fixed
+    // room feature), so a panicked mouse's destination never needs
+    // re-aiming the way a cat re-aims at a rolling ball.
     return mouse
   }
 

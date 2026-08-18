@@ -96,3 +96,25 @@ describe('getTailAnchorLocal — tail-wrap curl', () => {
     expect(rightDelta).toBeCloseTo(leftDelta, 5)
   })
 })
+
+// Both added so the tail anchor tracks the body's actual rendered
+// position instead of a fixed offset that only ever matched a standing
+// pose — a mismatch here is what reads as the tail "disconnecting" from
+// the body in poses added after the anchor was originally tuned.
+describe('getTailAnchorLocal — tracks the body it is actually attached to', () => {
+  it('raises the tail for a stretch, where the rump silhouette sits well above standing', () => {
+    const standing = getTailAnchorLocal(makePet({ action: 'idle' }), 0)
+    const stretching = getTailAnchorLocal(makePet({ action: 'stretching' }), 0)
+    expect(stretching.y).toBeLessThan(standing.y)
+  })
+
+  it('follows a moving gait’s crouch/rise, scaled by how fast it is actually moving', () => {
+    const standingStill = getTailAnchorLocal(makePet({ action: 'stalking', currentSpeed: 0 }), 0)
+    const slinking = getTailAnchorLocal(makePet({ action: 'stalking', currentSpeed: 30 }), 0)
+    // SLINK's bodyHeight is positive (crouches down) and only applies
+    // scaled by how fast the cat is actually moving (moving01) — both
+    // samples are 'stalking' so tailCarriage/mood are held constant,
+    // isolating just the gait-height contribution.
+    expect(slinking.y).toBeGreaterThan(standingStill.y)
+  })
+})

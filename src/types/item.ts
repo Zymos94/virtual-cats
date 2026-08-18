@@ -1,10 +1,11 @@
 import type { Needs } from './pet'
 
-// 'prey' (the mouse) and 'hole' (the mouse hole) opt out of the normal
-// item pipeline entirely — see petStore.tick()'s prey-conversion step and
-// attention.ts's itemUrgency, both of which special-case them rather than
-// letting a cat "consume" a mouse like a toy or wander toward a hole.
-export type ItemCategory = 'food' | 'toy' | 'grooming' | 'bed' | 'litterbox' | 'prey' | 'hole'
+// 'prey' (the mouse) opts out of the normal item pipeline — see
+// petStore.tick()'s prey-conversion step and attention.ts's itemUrgency,
+// which special-cases it rather than letting a cat "consume" it like a
+// toy. The mouse hole is a fixed room feature, not an item at all — see
+// roomLayout.ts's getMouseHolePosition.
+export type ItemCategory = 'food' | 'toy' | 'grooming' | 'bed' | 'litterbox' | 'prey'
 
 // Every item has physical characteristics — not just the ball. Future
 // items just need a profile, not new code: a cat bed is heavy/high-friction

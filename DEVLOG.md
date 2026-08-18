@@ -298,6 +298,80 @@ room that isn't a cat or a physics-driven object.
   real elapsed time between tool calls otherwise. New tests: `mouseBehavior.test.ts`,
   `mouseMovement.test.ts`.
 
+### M20 addendum (2026-08-18): lives, a double-edged flee, and a hole that isn't an item
+
+Follow-up feedback session, same mouse feature. Three behavioral changes plus one real
+bug caught during verification.
+
+- **The mouse hole is now a world feature, not a placeable item.** It was originally a
+  `'hole'`-category `PlacedItem` pre-placed by `resetGame()` — meaning a fresh save with
+  an empty `sceneItems` had no hole at all. Replaced with `getMouseHolePosition()`
+  (`src/game/roomLayout.ts`), a pure function of `sceneBounds` that both `petStore.tick()`
+  (a fleeing mouse's goal) and the new `MouseHoleSprite.tsx` call — always exists, always
+  exactly on the wall/floor line, survives a window resize. `ItemCategory` lost its
+  `'hole'` member entirely.
+- **Lives-gated panic**: mice now spawn with `livesRemaining` (2–7, random). Getting
+  spotted, pounced at, or chucked all cost a life (via `scareMouse()` in
+  `mouseBehavior.ts`) but only send it toward the hole once `livesRemaining <= 0` —
+  before that it just flees away from whatever spooked it, in a random direction, same as
+  before. Calming back to `'sneaking'` after `MOUSE_CALM_MS` unbothered does **not**
+  restore lives — they're a budget for the mouse's whole time in the room, not per
+  scare-episode.
+- **Fleeing is a double-edged sword**: `mouseUrgency()` (`src/game/attention.ts`) now
+  takes the mouse's state — a flat `MOUSE_FLEEING_URGENCY` (45) once `'fleeing'`,
+  regardless of any cat's mood, vs. a small mood-scaled fraction while merely `'sneaking'`.
+  A fleeing mouse is a magnet for _every_ nearby cat's attention scoring, not just
+  whichever one spooked it — verified live: a content cat (happiness 95, otherwise
+  totally uninterested in a sneaking mouse even at close range) switched straight to
+  pouncing the instant a different cat's chuck sent the mouse fleeing past it.
+- **Bug found and fixed during this verification**: chucking a caught mouse threw it via
+  a `JumpState` hop, but the catch-on-arrival check (the same block that lands a fresh
+  pounce) didn't exclude a mouse still mid-hop. Because the FSM re-targets a mouse's
+  _live_ position every tick, and the hop's easing barely moves it in the first ~16ms,
+  the cat's own destination would collapse to "basically where I already am" and register
+  an instant re-catch one tick after every chuck — the mouse never got real separation.
+  Caught via deterministic stepping: `livesRemaining` was spiraling arbitrarily negative
+  (a mouse observed at −25) while `state` never left `'fleeing'`/`'held'`, and the "usually
+  keeps pursuing" mechanic was actually "always instantly re-grabs." Fixed by treating a
+  mouse with a non-null `jump` as an automatic miss in the catch check — forces the chuck's
+  `MOUSE_CHUCK_DURATION_MS` hop to actually land, and real AI-driven fleeing to start,
+  before it can be caught again. Re-verified with the same deterministic scenario: lives
+  now decrement realistically (seconds apart, not one tick apart), and a mouse that
+  reaches zero lives successfully flees to the hole and despawns.
+- **Tail flick fix**: the `'agitated'` mood's flick (`tailMood.ts`) only ever visibly
+  moved the base of the tail, never the tip. Root cause was signal timing, not geometry —
+  `stepChain`'s per-segment easing (`tailPhysics.ts`, `EASE = 0.35`, applied once per real
+  frame) takes ~250–350ms to carry a sudden anchor movement all the way down 6 segments,
+  and the original flick's outward snap lasted only ~125ms — reversing direction before it
+  could ever propagate past the first segment or two. Fixed by lengthening the snap phase
+  (`SNAP_FRACTION` 0.18 → 0.4 of a longer 1000ms period, was 700ms). Verified: sampling
+  segment position relative to the body over ~1s of walking showed the tip swinging ~18px
+  vs. the base's ~8px — the reverse of the original bug.
+- **Tail body-attachment fix**: `getTailAnchorLocal` computed its anchor from the pet's
+  _simulated_ position only, but `PetSprite.tsx` layers render-only cosmetic offsets on
+  top (gait-driven crouch/rise for slink/strut/gallop, and the stretching pose's raised
+  rump) that the store never otherwise sees — so the tail's simulated attachment point
+  could visually diverge from where the body was actually drawn, reading as the tail
+  disconnecting mid-gait or mid-stretch. Fixed by folding a matching
+  `gait.bodyHeight * moving01` term (mirroring `PetSprite`'s own body-bob formula) and a
+  `stretching`-specific offset into the anchor's Y. New `tailMood.test.ts` coverage;
+  verified visually across idle, walking, and stretching.
+- **Found but not fixed — noted for later**: while forcing an unnatural pet-action swap
+  directly through `setState` (bypassing the FSM entirely, not something normal gameplay
+  ever does) to stage a tail screenshot, `stepChain` diverged into `NaN`/astronomical
+  values and never recovered. Root cause is the `dist || 0.0001` fallback in
+  `tailPhysics.ts` — when a segment lands almost exactly on its anchor, the
+  `dx/dist`/`dy/dist` normalization becomes numerically unstable, and a bad value then
+  feeds forward into every later segment and every future tick with no damping to pull it
+  back. Not reachable through any normal FSM-driven action transition (confirmed idle →
+  stretching → walking stayed numerically stable over 200 ticks), so left alone for now —
+  but a save/load or future feature that ever teleports a pet or swaps its action outside
+  the FSM should watch for this.
+- Verified all of the above with the same deterministic `tick()`-stepping approach as
+  M20, plus live visual checks in the browser for the two tail fixes. New/updated tests:
+  `attention.test.ts` (new), `mouseBehavior.test.ts` and `mouseMovement.test.ts` (rewritten
+  for the lives mechanic), `tailMood.test.ts` (new describe block).
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

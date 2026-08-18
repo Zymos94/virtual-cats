@@ -9,6 +9,7 @@ function makeMouse(overrides: Partial<Mouse> = {}): Mouse {
     destination: null,
     state: 'sneaking',
     facing: 'right',
+    livesRemaining: 4,
     actionStartedAt: 0,
     lastThreatenedAt: 0,
     claimedBy: null,

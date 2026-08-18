@@ -72,8 +72,19 @@ time-scale, all in one store. Its `tick()` is one large synchronous pass, in ord
 gaits/legs) rather than being either a physics-driven object or a full cat. A cat targets one via
 `Pet.targetMouseId` (mirrors `targetItemId`/`targetPetId`), transitions to `'holdingMouse'` on a
 successful pounce (fully store-side, like `'petting'` — never runs through the FSM), and chucks it
-back out after `HOLD_MOUSE_MS` with a `MOUSE_RECHASE_CHANCE` roll on whether it re-chases. Mice are
+back out after `HOLD_MOUSE_MS` with a `MOUSE_RECHASE_CHANCE` roll on whether it re-chases. A mouse
+mid-chuck-hop (`jump !== null`) is treated as an automatic miss by the catch-on-arrival check — it
+must not be catchable again until its hop actually lands, or the FSM's live-position re-targeting
+lets the cat "arrive" and re-catch it one tick later, before it ever gets real separation. Mice are
 **never persisted** (see Save schema) — a reload always starts with none in the room.
+
+Each mouse spawns with `livesRemaining` (2–7, random) — every scare (spotted, pounced at, or
+chucked) costs one via `scareMouse()` (`src/game/mouseBehavior.ts`), but it only beelines for the
+mouse hole once that hits 0; before then it just flees away from whatever spooked it. Calming back
+to `'sneaking'` after `MOUSE_CALM_MS` unbothered does not restore lives. A `'fleeing'` mouse is a
+flat, mood-independent attention draw for _every_ nearby cat (`mouseUrgency()` in
+`src/game/attention.ts`), not just whichever one spooked it — fleeing to escape one cat's notice
+risks pulling in every other cat in range.
 
 A planned slice split (`ARCHITECTURE.md` Phase 8) will divide this into cooperating Zustand slices
 — **update this section when that lands.** `src/game/behaviorFSM.ts` stays a pure function
@@ -96,6 +107,12 @@ World coordinates are plain pixels. Pets and items have a floor position `{x, y}
 wall in pseudo-3D perspective — floor-bound entities stay below it. Items additionally have a
 `height` (z-axis, gravity-affected) so a thrown ball can arc into the wall band's visual space
 while airborne, constrained back onto the floor plane once it lands.
+
+The mouse hole is a fixed feature of the room, not a placeable item — `getMouseHolePosition()`
+(`src/game/roomLayout.ts`) derives its position from live `sceneBounds` alone, so it always exists,
+always sits exactly on the wall/floor line, and stays correct across a window resize. Both
+`petStore.ts` (a fleeing mouse's goal) and `MouseHoleSprite.tsx` (rendering it) call this rather
+than duplicating the math.
 
 ## File map
 
@@ -128,12 +145,14 @@ while airborne, constrained back onto the floor plane once it lands.
   drag-out-of-panel widgets.
 - `src/components/MouseSprite.tsx` — mouse rendering only; no pointer handler at all, it's not
   player-draggable once alive (only the pre-conversion item form is, via the generic `ItemSprite`).
+- `src/components/MouseHoleSprite.tsx` — the mouse hole; fixed, non-interactive, positioned via
+  `getMouseHolePosition()` — not backed by a `PlacedItem` at all (see Coordinate model above).
 - `src/components/GamePanel.tsx` — unified draggable UI panel (stats/suitcase/breeding tabs).
-- `src/components/Scene.tsx` — pure render: items, then pets, then mice, in that z-order (mice last
-  so a held one stays visible on top of its holder).
+- `src/components/Scene.tsx` — pure render: the mouse hole, then items, then pets, then mice, in
+  that z-order (mice last so a held one stays visible on top of its holder).
 - `src/data/itemDefinitions.ts` — item types and their `PhysicsProfile` (mass/friction/bounciness).
-  Includes `'prey'` (the mouse, transient — see Store architecture) and `'hole'` (the mouse hole,
-  inert furniture) categories, both excluded from normal item-urgency scoring.
+  Includes `'prey'` (the mouse, transient — see Store architecture), excluded from normal
+  item-urgency scoring. No `'hole'` category — the mouse hole isn't an item at all.
 - `src/types/pet.ts` / `item.ts` / `mouse.ts` — core interfaces.
 
 ## Testing conventions
@@ -186,6 +205,13 @@ section with the live URL once deployed.**
   works, just unverified).
 - Mice can't be picked up/moved by the player directly once alive — only the pre-conversion emoji
   item is draggable. Not a bug, just an intentionally unbuilt interaction (nobody's asked for it).
+- `tailPhysics.ts`'s `stepChain` has a latent numerical instability: if a segment ever lands almost
+  exactly on its own anchor, the `dist || 0.0001` fallback's `dx/dist`/`dy/dist` normalization goes
+  unstable and can diverge to `NaN`/astronomical values with no damping to recover — confirmed by
+  forcing a pet's `action` directly via `setState` (bypassing the FSM), not reachable through any
+  normal FSM-driven transition (idle → stretching → walking stayed stable over 200 ticks). Worth
+  revisiting if a future feature ever teleports a pet or swaps its action outside the FSM (e.g. a
+  save/load edge case).
 
 ## Related docs
 

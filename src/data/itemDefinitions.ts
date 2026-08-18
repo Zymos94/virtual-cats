@@ -84,16 +84,4 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     physics: { mass: 0.3, friction: 0.85, bounciness: 0.2 },
     consumable: false,
   },
-  {
-    id: 'mousehole',
-    name: 'Mouse Hole',
-    category: 'hole',
-    icon: '🕳️',
-    // Furniture, not something a cat ever walks up to and uses — it's
-    // purely a destination a fleeing mouse heads for (see mouseBehavior.ts
-    // and petStore.tick()'s despawn check).
-    effect: {},
-    physics: { mass: 3, friction: 0.9, bounciness: 0 },
-    consumable: false,
-  },
 ]
