@@ -525,6 +525,10 @@ export const usePetStore = create<PetStore>((set) => ({
         if (pets[petId].socialClaimedBy) socialClaimed.add(petId)
       }
       const newSocialClaims: Record<string, string> = {} // targetPetId -> claimerId
+      // targetPetId -> claimerId, for a claim whose claimer is giving up on it this tick (redirecting
+      // to something else, or just giving up entirely) — checked against claimerId before clearing so
+      // a fresh claim someone else made on the same target this same tick is never wiped out.
+      const socialClaimsToRelease: Record<string, string> = {}
 
       const moved: Record<string, Pet> = {}
       for (const id in pets) {
@@ -692,6 +696,12 @@ export const usePetStore = create<PetStore>((set) => ({
           claimed.add(decided.targetItemId)
           const claimedItem = sceneItems[decided.targetItemId]
           if (claimedItem) sceneItems[decided.targetItemId] = { ...claimedItem, claimedBy: id }
+        }
+        // Redirecting to someone else (or giving up entirely) without ever arriving must release
+        // the old claim, or the abandoned partner waits forever for a cat that's already moved on
+        // (behaviorFSM's 'idle'/'sitting' cases return early whenever `socialClaimedBy` is set).
+        if (pet.targetPetId && pet.targetPetId !== decided.targetPetId) {
+          socialClaimsToRelease[pet.targetPetId] = id
         }
         if (decided.targetPetId && decided.targetPetId !== pet.targetPetId) {
           socialClaimed.add(decided.targetPetId)
@@ -964,6 +974,18 @@ export const usePetStore = create<PetStore>((set) => ({
         moved[id] = finalPet
       }
 
+      // Release claims abandoned this tick before applying fresh ones below — checked against the
+      // releasing pet's own id so a fresh claim someone else made on the same target this same tick
+      // is never wiped out.
+      for (const targetId in socialClaimsToRelease) {
+        if (
+          moved[targetId] &&
+          moved[targetId].socialClaimedBy === socialClaimsToRelease[targetId]
+        ) {
+          moved[targetId] = { ...moved[targetId], socialClaimedBy: null }
+        }
+      }
+
       // Apply newly-made social claims so the claimed cat waits in place
       // starting next tick, and shows up excluded for anyone else.
       for (const targetId in newSocialClaims) {
@@ -988,6 +1010,20 @@ export const usePetStore = create<PetStore>((set) => ({
             partner.action !== 'playing'
           ) {
             playSound('playing')
+            // `partner` is being pulled into playing with the arriving `id` regardless of what it
+            // was independently doing — if it was itself mid-pursuit of some OTHER cat, that pursuit
+            // is about to be discarded (targetPetId overwritten below), so release the claim it was
+            // holding there too, or that third cat waits forever for a partner who's moved on.
+            if (
+              partner.targetPetId &&
+              partner.targetPetId !== id &&
+              moved[partner.targetPetId]?.socialClaimedBy === partner.id
+            ) {
+              moved[partner.targetPetId] = {
+                ...moved[partner.targetPetId],
+                socialClaimedBy: null,
+              }
+            }
             moved[id] = {
               ...after,
               action: 'playing',
@@ -1009,6 +1045,12 @@ export const usePetStore = create<PetStore>((set) => ({
               },
             }
           } else {
+            // Arrived, but the partner became unavailable in the meantime (picked up, put away,
+            // already playing with someone else) — release the claim `id` was holding on them, or
+            // they'd wait forever for a partner who already gave up.
+            if (moved[after.targetPetId]?.socialClaimedBy === id) {
+              moved[after.targetPetId] = { ...moved[after.targetPetId], socialClaimedBy: null }
+            }
             moved[id] = { ...after, targetPetId: null }
           }
         }

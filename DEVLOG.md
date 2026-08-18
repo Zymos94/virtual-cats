@@ -372,6 +372,56 @@ bug caught during verification.
   `attention.test.ts` (new), `mouseBehavior.test.ts` and `mouseMovement.test.ts` (rewritten
   for the lives mechanic), `tailMood.test.ts` (new describe block).
 
+### Two more bugs, reported after a real play session (2026-08-18)
+
+The user loaded the game after the M20 addendum shipped and reported two very concrete
+symptoms: "the yellow cat runs around and does what he's meant to, the other two just
+stand there," and "the mouse only spawns from the mouseball at 1x speed." Both were
+pre-existing bugs, unrelated to the round-2 mouse changes themselves — the mouse feature
+just happened to be what surfaced the second one.
+
+- **Two cats permanently frozen — a stale `socialClaimedBy` claim.** `behaviorFSM.ts`'s
+  `'idle'` (and `'sitting'`) case returns early, doing nothing at all, whenever
+  `pet.socialClaimedBy` is set (correct — it's meant to make a claimed cat wait in place
+  for a partner on the way over). The bug: nothing ever released a claim once the claiming
+  cat gave up on it without arriving. Reproduced deterministically with the three starter
+  pets (identical needs, so all three want company at once): Tom set out toward Whiskers
+  and Mittens set out toward Tom; before Tom arrived, Mittens reached Tom first and their
+  mutual-arrival code (`petStore.ts`) forcibly overwrote Tom's `targetPetId` to point at
+  Mittens instead so they could start `'playing'` together — silently discarding Tom's own
+  claim on Whiskers. Whiskers sat there `socialClaimedBy: 'pet-3'` forever, permanently
+  excluded from ever reconsidering anything, even though Tom had completely forgotten
+  about it. Fixed two related gaps: (1) whenever a pet's own decided `targetPetId` changes
+  away from its previous one (redirecting, or simply giving up), the old target's claim is
+  now released via a `socialClaimsToRelease` map applied before that tick's fresh claims,
+  checked against the releasing pet's own id so an unrelated fresh claim on the same target
+  is never wiped; (2) in the mutual-arrival block itself, when the arriving cat's claim on
+  the passive partner forcibly overwrites that partner's `targetPetId`, any claim the
+  partner was independently holding elsewhere is released too, for the same reason. Also
+  covered the "arrived but partner became unavailable" miss branch, which had the same
+  gap. Verified by re-running the same three-pet scenario for a full simulated 95 seconds:
+  all three now cycle continuously through sitting/grooming/kneading/zoomies/wandering
+  with no permanently-`null`-yet-stuck cat.
+- **Mouse only converts to a creature at 1x speed — a discretized-bounce fixed point.**
+  `petStore.tick` scales `deltaMs` by `timeScale` (4x/16x can mean up to 1600ms in a single
+  physics step, since `useGameLoop`'s `MAX_DELTA_MS` clamp runs _before_ that
+  multiplication, not after). `itemPhysics.ts`'s height/gravity integration is a plain
+  Euler step, which only approximates continuous bounce physics well for small steps — at
+  a large enough step, gravity accelerates a falling item so much within that one step that
+  its bounce-off velocity (`-verticalVelocity * bounciness`) can land on an exact repeating
+  value tick after tick, an artifact of the coarse discretization rather than real physics
+  (which loses energy every bounce and eventually settles). Confirmed directly: at a
+  16x-equivalent step size the mouse item's `verticalVelocity` locked onto a constant
+  ~77px/s forever, so it never registered as settled and never converted into a `Mouse`.
+  Fixed two ways: (1) `stepItemPhysics` now substeps internally at a small fixed size
+  (`PHYSICS_SUBSTEP_MS = 20`) regardless of the caller's `deltaMs`, restoring the
+  small-step stability `MAX_DELTA_MS` was originally meant to guarantee; (2) belt-and-
+  suspenders, the landing check now also snaps to a full stop if the _resulting_ bounce
+  would be smaller than `Z_STOP_THRESHOLD` (not just the incoming impact speed), since
+  substepping alone only shrinks a fixed-point artifact's amplitude, it doesn't guarantee
+  eliminating it at every possible step size. Verified the mouse item now converts
+  consistently in ~300–500ms of simulated time at 1x, 4x, and 16x alike.
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future

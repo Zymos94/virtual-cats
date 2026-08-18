@@ -65,6 +65,24 @@ export function clampToRoom(
 // contribute its own friction (and maybe bounciness) that combines with
 // the item's, so the same ball rolls differently on carpet vs. hardwood.
 
+// Bounce physics is Euler-integrated (see stepItemPhysicsOnce below), which
+// only approximates continuous motion well for small dt. useGameLoop's
+// MAX_DELTA_MS caps a single *real* frame at 100ms for exactly this reason
+// — but petStore.tick multiplies that by `timeScale` afterward, so a 4x/16x
+// tick can still hand this a much larger effective deltaMs. At a large
+// enough dt, gravity accelerates a falling item so much within one single
+// step that its bounce-off velocity (scaled by bounciness) can land on an
+// exact repeating value tick after tick — an artifact of the coarse
+// discretization, not real physics, which would naturally lose energy each
+// bounce and settle. Caught via deterministic testing: a mouse item at 16x
+// speed got stuck bouncing at a constant ~77px/s forever, so it never
+// registered as "settled" (verticalVelocity === 0) and never converted into
+// a Mouse creature — the bug the "mouse only spawns at 1x" report was.
+// Fixed by substepping internally at a small, fixed size regardless of the
+// caller's deltaMs, so behavior — and stability — stays the same at every
+// `timeScale`.
+const PHYSICS_SUBSTEP_MS = 20
+
 // Advances one physics frame for a placed item, using its material profile:
 //
 // - Height/gravity axis: a thrown item arcs upward then falls, same as a
@@ -81,8 +99,23 @@ export function stepItemPhysics(
   deltaMs: number,
   bounds: { width: number; height: number },
 ): PlacedItem {
-  if (item.held) return item
+  if (item.held || deltaMs <= 0) return item
 
+  const steps = Math.ceil(deltaMs / PHYSICS_SUBSTEP_MS)
+  const subDeltaMs = deltaMs / steps
+  let result = item
+  for (let i = 0; i < steps; i++) {
+    result = stepItemPhysicsOnce(result, profile, subDeltaMs, bounds)
+  }
+  return result
+}
+
+function stepItemPhysicsOnce(
+  item: PlacedItem,
+  profile: PhysicsProfile,
+  deltaMs: number,
+  bounds: { width: number; height: number },
+): PlacedItem {
   const dt = deltaMs / 1000
 
   let height = item.height
@@ -94,7 +127,17 @@ export function stepItemPhysics(
     if (height <= 0) {
       height = 0
       hitFloor = true
-      vz = Math.abs(vz) < Z_STOP_THRESHOLD ? 0 : -vz * profile.bounciness
+      const bounced = -vz * profile.bounciness
+      // Checked both ways: a gentle-enough impact never bounces at all
+      // (original intent), and separately, a resulting hop too small to
+      // read as a bounce anyway is just as good as fully stopped. Without
+      // the second check, a low-bounciness item's impact speed can settle
+      // into an exact repeating value from one bounce to the next (gravity
+      // reaccelerating it to the same speed each short hop) — since that
+      // recurrence has no built-in energy loss over time the way a real
+      // bounce does, verticalVelocity could stay stuck just above 0
+      // forever rather than ever reaching exactly 0.
+      vz = Math.abs(vz) < Z_STOP_THRESHOLD || Math.abs(bounced) < Z_STOP_THRESHOLD ? 0 : bounced
     } else if (height > MAX_HEIGHT) {
       height = MAX_HEIGHT
       vz = Math.min(vz, 0)
