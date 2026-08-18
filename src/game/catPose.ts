@@ -131,8 +131,8 @@ export interface PoseInput {
 }
 
 export function computeLegPoses(input: PoseInput): LegPose[] {
-  const strideAmp = 3 + 5 * input.speed01
-  const liftAmp = 2.5 + 3.5 * input.speed01
+  const strideAmp = (3 + 5 * input.speed01) * input.gait.strideAmpMul
+  const liftAmp = (2.5 + 3.5 * input.speed01) * input.gait.liftAmpMul
 
   return LEGS.map((leg, i) => {
     const hip = { x: leg.hip.x, y: leg.hip.y + input.bob }

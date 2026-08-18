@@ -99,6 +99,12 @@ const POUNCE_MS_PER_PX = 2.2
 // the cat just reconsiders from where it landed.
 const POUNCE_MISS_DISTANCE = 48
 
+// Stalking: closer than this to a grounded toy (but still outside pounce
+// range), a trotting approach drops into a crouched slink instead — reads
+// as one continuous stalk-then-pounce motion rather than a trot that
+// abruptly leaps.
+const STALK_RANGE = 200
+
 // Very high on purpose — the panel should feel grabby, not slippery. A
 // released panel travels only a token distance before stopping, unlike a
 // thrown item.
@@ -471,7 +477,10 @@ export const usePetStore = create<PetStore>((set) => ({
         // hasn't noticed it's being approached yet) by re-aiming at its
         // current position every frame, rather than the stale spot it was
         // at the moment it got claimed.
-        if (decided.action === 'walking' && decided.targetItemId) {
+        if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetItemId
+        ) {
           const target = sceneItems[decided.targetItemId]
           if (target) decided = { ...decided, destination: target.position }
         } else if (decided.action === 'walking' && decided.targetPetId) {
@@ -487,11 +496,39 @@ export const usePetStore = create<PetStore>((set) => ({
           }
         }
 
+        // Sneaking up on a grounded toy: within stalking range but not yet
+        // close enough to pounce, drop the trot into a crouched slink
+        // instead — see STALK_RANGE. If the toy rolls back out of range
+        // mid-stalk, resume a normal trot rather than staying crouched.
+        if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetItemId &&
+          !decided.jump
+        ) {
+          const target = sceneItems[decided.targetItemId]
+          const definition = target && ITEM_DEFINITIONS.find((d) => d.id === target.itemTypeId)
+          if (target && definition?.category === 'toy' && target.height <= 0.5) {
+            const dist = Math.hypot(
+              target.position.x - decided.position.x,
+              target.position.y - decided.position.y,
+            )
+            if (dist < STALK_RANGE && dist > POUNCE_RANGE && decided.action === 'walking') {
+              decided = { ...decided, action: 'stalking' }
+            } else if (dist >= STALK_RANGE && decided.action === 'stalking') {
+              decided = { ...decided, action: 'walking' }
+            }
+          }
+        }
+
         // Close enough to a grounded toy — leap the last stretch instead
         // of walking right up to it. Lives here (not the FSM) because it
         // needs the item's definition and live position; the same reason
         // arrival/consumption is handled centrally below.
-        if (decided.action === 'walking' && decided.targetItemId && !decided.jump) {
+        if (
+          (decided.action === 'walking' || decided.action === 'stalking') &&
+          decided.targetItemId &&
+          !decided.jump
+        ) {
           const target = sceneItems[decided.targetItemId]
           const definition = target && ITEM_DEFINITIONS.find((d) => d.id === target.itemTypeId)
           if (target && definition?.category === 'toy' && target.height <= 0.5) {
@@ -525,7 +562,10 @@ export const usePetStore = create<PetStore>((set) => ({
         // it), don't "use" something floating above the floor — just give
         // up this attempt and reconsider next cycle.
         const wasApproaching =
-          pet.action === 'walking' || pet.action === 'pouncing' || decided.action === 'pouncing'
+          pet.action === 'walking' ||
+          pet.action === 'stalking' ||
+          pet.action === 'pouncing' ||
+          decided.action === 'pouncing'
         if (wasApproaching && finalPet.action === 'idle' && finalPet.targetItemId) {
           const placedItem = sceneItems[finalPet.targetItemId]
           const definition =

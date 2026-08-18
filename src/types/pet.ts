@@ -19,6 +19,12 @@ export type ActionState =
   // normal walking movement. Lands into the same arrival/consumption flow
   // as walking there.
   | 'pouncing'
+  // Sneaking up on a grounded toy — behaves like 'walking' (still
+  // destination-seeking, same arrival handling) but rendered with a
+  // crouched slink gait, the stretch right before 'pouncing'. Triggered
+  // store-side in petStore.tick() rather than the FSM, since it needs the
+  // item's live position — same reason 'pouncing' itself is store-side.
+  | 'stalking'
 export type Facing = 'left' | 'right'
 
 // A ballistic hop from one floor point to another, advanced by movement.ts

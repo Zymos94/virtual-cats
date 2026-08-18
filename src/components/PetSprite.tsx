@@ -8,7 +8,7 @@ import { SVG_HEIGHT, SVG_WIDTH } from '../game/spriteConstants'
 import { getLifeStage, getLifeStageScale } from '../game/lifeStage'
 import { RUN_SPEED } from '../game/movement'
 import { computeLegPoses, type LegPose } from '../game/catPose'
-import { selectGait } from '../game/gaits'
+import { bodyPoseFor, selectGait } from '../game/gaits'
 import { playSound } from '../game/sound'
 
 interface PetSpriteProps {
@@ -192,10 +192,21 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
   // Gait: stride comes from distance actually traveled (pet.stridePhase),
   // amplitude from real speed — so legs reach further and lift higher at a
-  // run, and ease to a stop with the cat instead of cutting off.
+  // run, and ease to a stop with the cat instead of cutting off. Which
+  // gait (walk/trot/slink/gallop/strut) applies comes from the pet's
+  // current action/needs — see selectGait.
+  const gait = selectGait(pet)
   const speed01 = Math.min(1, pet.currentSpeed / RUN_SPEED)
   const moving01 = Math.min(1, pet.currentSpeed / 30)
-  const bob = -Math.abs(Math.sin(pet.stridePhase)) * (0.5 + 1.3 * speed01) * moving01
+  const bob =
+    -Math.abs(Math.sin(pet.stridePhase)) * (0.5 + 1.3 * speed01) * moving01 * gait.bounceMul
+  // Body/head posture the current gait asks for (crouch, proud stance,
+  // gallop's stretch-and-gather) — see bodyPoseFor. bodyBob folds the
+  // gait's crouch/rise into the same value the legs, body, and head all
+  // read, so everything lowers/rises together rather than the legs
+  // crouching under a body that stayed put.
+  const bodyPose = bodyPoseFor(gait, pet.stridePhase, moving01)
+  const bodyBob = bob + bodyPose.heightOffset
 
   // Airborne arc of a hop/pounce — the ground track is simulated flat (see
   // JumpState), the visible lift happens purely here.
@@ -210,13 +221,13 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
   const legs = computeLegPoses({
     stridePhase: pet.stridePhase,
-    gait: selectGait(pet),
+    gait,
     speed01,
     moving01,
     sit,
     lie,
     hop,
-    bob,
+    bob: bodyBob,
     hold: eased.hold,
     holdSwingPhase,
     holdSwingAmount: eased.holdSwingAmount,
@@ -261,8 +272,10 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
   const eyesClosed = isPetting || lie > 0.5 || blinking
 
   // The SVG's facing-left flip mirrors rotation sense, so pre-correct the
-  // head rotation (gaze tilt + the nose-down droop of falling asleep).
-  const headRotateDeg = (facingLeft ? -1 : 1) * (eased.tilt + 12 * lie)
+  // head rotation (gaze tilt + the nose-down droop of falling asleep +
+  // the current gait's carriage — forward/low for a slink, chin-up for a
+  // strut).
+  const headRotateDeg = (facingLeft ? -1 : 1) * (eased.tilt + 12 * lie + bodyPose.headPitchDeg)
 
   // Pets need a three-way gesture (click to select / hold in place to pet /
   // drag to carry) instead of the generic click-or-drag useDraggable gives
@@ -396,7 +409,11 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
               blob at this size. */}
           <g
             style={{
-              transform: `translateY(${bob + lie * 6}px) scale(1, ${1 - 0.2 * lie})`,
+              // Gallop's stretch-and-gather (bodyPose.stretch, only nonzero
+              // for gallop) elongates the body horizontally when extended
+              // and compresses it slightly when gathered, on top of the
+              // usual bounce/crouch/sleep-squash.
+              transform: `translateY(${bodyBob + lie * 6}px) scale(${1 + bodyPose.stretch * 0.06}, ${1 - 0.2 * lie - bodyPose.stretch * 0.03})`,
               transformOrigin: '32px 47px',
             }}
           >
@@ -465,7 +482,7 @@ export function PetSprite({ pet, selected }: PetSpriteProps) {
 
           <g
             style={{
-              transform: `translateY(${bob * 0.6 + lie * 5}px) rotate(${headRotateDeg}deg)`,
+              transform: `translateY(${bodyBob * 0.6 + lie * 5 + bodyPose.headHeightOffset}px) rotate(${headRotateDeg}deg)`,
               transformOrigin: `${HEAD_PIVOT_LOCAL.x}px ${HEAD_PIVOT_LOCAL.y}px`,
             }}
           >

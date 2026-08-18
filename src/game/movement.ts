@@ -6,6 +6,8 @@ import { getLifeStage, getLifeStageSpeedMultiplier } from './lifeStage'
 // heading to something it actually wants is a purposeful trot, zoomies is
 // a flat-out run.
 const AMBLE_SPEED = 40
+// Slower than an amble — a deliberate creep, not idle wandering.
+const STALK_SPEED = 28
 const TROT_SPEED = 85
 export const RUN_SPEED = 190
 
@@ -43,9 +45,11 @@ function targetSpeedFor(pet: Pet, distanceLeft: number): number {
   const base =
     pet.action === 'zoomies'
       ? RUN_SPEED
-      : pet.targetItemId || pet.targetPetId
-        ? TROT_SPEED
-        : AMBLE_SPEED
+      : pet.action === 'stalking'
+        ? STALK_SPEED
+        : pet.targetItemId || pet.targetPetId
+          ? TROT_SPEED
+          : AMBLE_SPEED
   const scaled = base * getLifeStageSpeedMultiplier(getLifeStage(pet.ageMs))
   if (distanceLeft >= ARRIVE_RADIUS) return scaled
   return Math.max(MIN_ARRIVE_SPEED, scaled * (distanceLeft / ARRIVE_RADIUS))
@@ -83,7 +87,10 @@ export function movePet(pet: Pet, deltaMs: number): Pet {
     return { ...pet, position, facing, jump: { ...pet.jump, progressMs } }
   }
 
-  const destination = pet.action === 'walking' || pet.action === 'zoomies' ? pet.destination : null
+  const destination =
+    pet.action === 'walking' || pet.action === 'zoomies' || pet.action === 'stalking'
+      ? pet.destination
+      : null
   if (!destination) {
     if (pet.currentSpeed === 0) return pet
     return { ...pet, currentSpeed: Math.max(0, pet.currentSpeed - DECEL * dt) }

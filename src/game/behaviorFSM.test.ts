@@ -154,3 +154,32 @@ describe('pouncing', () => {
     expect(next.action).toBe('idle')
   })
 })
+
+describe('stalking', () => {
+  it('keeps creeping toward its destination', () => {
+    const pet = makePet({
+      action: 'stalking',
+      targetItemId: 'mouse-1',
+      destination: { x: 260, y: 300 },
+    })
+    const next = updatePetBehavior(pet, { now: 1000, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next).toBe(pet)
+  })
+
+  it('falls back to idle if its destination disappears', () => {
+    const pet = makePet({ action: 'stalking', targetItemId: 'mouse-1', destination: null })
+    const next = updatePetBehavior(pet, { now: 1000, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('idle')
+  })
+
+  it('settles to idle once it has closed the distance', () => {
+    const pet = makePet({
+      action: 'stalking',
+      targetItemId: 'mouse-1',
+      position: { x: 200, y: 300 },
+      destination: { x: 201, y: 300 },
+    })
+    const next = updatePetBehavior(pet, { now: 1000, sceneBounds: BOUNDS, bestTarget: null })
+    expect(next.action).toBe('idle')
+  })
+})

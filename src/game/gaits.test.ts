@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Pet } from '../types/pet'
-import { footOffset, selectGait, TROT, WALK } from './gaits'
+import { bodyPoseFor, footOffset, GALLOP, selectGait, SLINK, STRUT, TROT, WALK } from './gaits'
 import { STARTER_AGE_MS } from './lifeStage'
 
 function makePet(overrides: Partial<Pet> = {}): Pet {
@@ -51,7 +51,7 @@ function sampleCycle(dutyFactor: number, steps = 400) {
   })
 }
 
-describe.each([WALK, TROT])('footOffset ($name)', (gait) => {
+describe.each([WALK, TROT, SLINK, GALLOP, STRUT])('footOffset ($name)', (gait) => {
   const points = sampleCycle(gait.dutyFactor)
   const stance = points.filter((pt) => pt.p > 0.005 && pt.p < gait.dutyFactor - 0.005)
   const swing = points.filter((pt) => pt.p > gait.dutyFactor + 0.005 && pt.p < 0.995)
@@ -107,5 +107,87 @@ describe('selectGait', () => {
 
   it('trots toward another cat', () => {
     expect(selectGait(makePet({ targetPetId: 'cat-2' })).name).toBe('trot')
+  })
+
+  it('slinks while stalking', () => {
+    expect(selectGait(makePet({ action: 'stalking', targetItemId: 'mouse-1' })).name).toBe('slink')
+  })
+
+  it('gallops during zoomies', () => {
+    expect(selectGait(makePet({ action: 'zoomies' })).name).toBe('gallop')
+  })
+
+  it('gallops toward a wanted item when very hungry', () => {
+    const pet = makePet({ targetItemId: 'food-1', needs: { ...makePet().needs, hunger: 15 } })
+    expect(selectGait(pet).name).toBe('gallop')
+  })
+
+  it('gallops toward a wanted item when nearly out of energy', () => {
+    const pet = makePet({ targetItemId: 'bed-1', needs: { ...makePet().needs, energy: 10 } })
+    expect(selectGait(pet).name).toBe('gallop')
+  })
+
+  it('does not gallop from urgency alone without something to walk toward', () => {
+    const pet = makePet({ needs: { ...makePet().needs, hunger: 5 } })
+    expect(selectGait(pet).name).toBe('walk')
+  })
+
+  it('struts a happy aimless wander', () => {
+    const pet = makePet({ action: 'walking', needs: { ...makePet().needs, happiness: 95 } })
+    expect(selectGait(pet).name).toBe('strut')
+  })
+
+  it('does not strut a happy cat that is not actually walking', () => {
+    const pet = makePet({ action: 'idle', needs: { ...makePet().needs, happiness: 95 } })
+    expect(selectGait(pet).name).toBe('walk')
+  })
+
+  it('does not strut a happy cat heading toward something specific', () => {
+    const pet = makePet({
+      action: 'walking',
+      targetItemId: 'toy-1',
+      needs: { ...makePet().needs, happiness: 95 },
+    })
+    expect(selectGait(pet).name).toBe('trot')
+  })
+})
+
+describe('bodyPoseFor', () => {
+  it('applies none of a neutral gait posture', () => {
+    expect(bodyPoseFor(WALK, 1.2, 1)).toEqual({
+      heightOffset: 0,
+      stretch: 0,
+      headHeightOffset: 0,
+      headPitchDeg: 0,
+    })
+  })
+
+  it('scales posture in with moving01, absent when standing still', () => {
+    const standing = bodyPoseFor(SLINK, 1.2, 0)
+    expect(standing.heightOffset).toBe(0)
+    expect(standing.headHeightOffset).toBe(0)
+    expect(standing.headPitchDeg).toBe(0)
+
+    const moving = bodyPoseFor(SLINK, 1.2, 1)
+    expect(moving.heightOffset).toBe(SLINK.bodyHeight)
+    expect(moving.headHeightOffset).toBe(SLINK.headHeight)
+    expect(moving.headPitchDeg).toBe(SLINK.headPitchDeg)
+  })
+
+  it('only gallop carries a nonzero spine stretch', () => {
+    expect(bodyPoseFor(WALK, 1.2, 1).stretch).toBe(0)
+    expect(bodyPoseFor(TROT, 1.2, 1).stretch).toBe(0)
+    expect(bodyPoseFor(SLINK, 1.2, 1).stretch).toBe(0)
+    expect(bodyPoseFor(STRUT, 1.2, 1).stretch).toBe(0)
+    expect(bodyPoseFor(GALLOP, 1.2, 1).stretch).not.toBe(0)
+  })
+
+  it('cycles gallop stretch twice per stride (once per suspension)', () => {
+    const atZero = bodyPoseFor(GALLOP, 0, 1).stretch
+    const atHalf = bodyPoseFor(GALLOP, Math.PI, 1).stretch
+    const atFull = bodyPoseFor(GALLOP, Math.PI * 2, 1).stretch
+    expect(atZero).toBeCloseTo(0, 5)
+    expect(atHalf).toBeCloseTo(0, 5) // sin(2*pi) — a full extra cycle already completed
+    expect(atFull).toBeCloseTo(0, 5)
   })
 })

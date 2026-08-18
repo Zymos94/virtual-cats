@@ -63,6 +63,34 @@ describe('movePet gaits', () => {
     expect(pet.currentSpeed).toBeGreaterThan(150)
   })
 
+  it('actually creeps toward its destination while stalking', () => {
+    let pet = makePet({
+      action: 'stalking',
+      targetItemId: 'mouse-1',
+      destination: { x: 800, y: 300 },
+    })
+    for (let i = 0; i < 60; i++) pet = movePet(pet, 16)
+    expect(pet.position.x).toBeGreaterThan(200) // actually moved, not frozen
+  })
+
+  it('stalks slower than it trots toward the same wanted item', () => {
+    let stalker = makePet({
+      action: 'stalking',
+      targetItemId: 'mouse-1',
+      destination: { x: 2000, y: 300 },
+    })
+    let trotter = makePet({
+      action: 'walking',
+      targetItemId: 'mouse-1',
+      destination: { x: 2000, y: 300 },
+    })
+    for (let i = 0; i < 120; i++) {
+      stalker = movePet(stalker, 16)
+      trotter = movePet(trotter, 16)
+    }
+    expect(stalker.currentSpeed).toBeLessThan(trotter.currentSpeed)
+  })
+
   it('advances stride phase with distance traveled', () => {
     let pet = makePet({ action: 'walking', destination: { x: 800, y: 300 } })
     for (let i = 0; i < 60; i++) pet = movePet(pet, 16)

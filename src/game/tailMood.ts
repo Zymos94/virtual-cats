@@ -1,4 +1,5 @@
 import type { Pet } from '../types/pet'
+import { selectGait } from './gaits'
 import { SVG_WIDTH } from './spriteConstants'
 
 // A simple first pass at mood-driven tail carriage, using only the stats
@@ -74,6 +75,12 @@ function getTailSwingLocal(mood: TailMood, now: number): { x: number; y: number 
 export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: number } {
   const mood = getTailMood(pet)
   const swing = getTailSwingLocal(mood, now)
+  // Gait-driven carriage — strut flags the tail up, slink drops it — is a
+  // small additional offset layered on top of the mood/posture system
+  // above rather than replacing it. Every other gait (walk/trot/gallop)
+  // carries 'level', so this is a no-op for them.
+  const carriage = selectGait(pet).tailCarriage
+  const carriageAdjust = carriage === 'high' ? -7 : carriage === 'low' ? 9 : 0
   // Mirror the attach point itself around the sprite's own center when
   // facing left, so it stays at the cat's back — the one thing about the
   // tail that actually does need to know about facing, since (unlike the
@@ -93,6 +100,7 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
     y:
       (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) +
       postureDrop +
+      carriageAdjust +
       swing.y,
   }
 }

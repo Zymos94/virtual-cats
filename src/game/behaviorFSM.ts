@@ -197,6 +197,22 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       if (dist < 4) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
       return pet
     }
+    // Same destination-seeking shape as 'walking' — the store is what
+    // transitions a pet into (and out of) 'stalking' based on live
+    // distance to the toy it's approaching (see petStore.tick's
+    // STALK_RANGE check), same as it does for 'pouncing'. This case is
+    // mostly a fallback: normally the store hands off to 'pouncing' well
+    // before a stalking cat would ever walk all the way to the target.
+    case 'stalking': {
+      if (!pet.destination)
+        return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      const dist = Math.hypot(
+        pet.destination.x - pet.position.x,
+        pet.destination.y - pet.position.y,
+      )
+      if (dist < 4) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      return pet
+    }
     case 'sleeping': {
       if (ctx.now - pet.actionStartedAt > SLEEP_DURATION_MS || pet.needs.energy >= 90) {
         return { ...pet, action: 'idle', actionStartedAt: ctx.now }
