@@ -10,11 +10,11 @@ repo is at commit `8ab13ed` (M19) as of writing.
 **Sequencing (owner-confirmed):** execute `ARCHITECTURE.md` phases 1–8 first. This plan's phases
 assume the save-migration system (its Phase 7) and the store slice split (its Phase 8) have landed.
 New genetics fields added here go through real migrations, not ad-hoc `?? default` patching.
-**Phases A1 and A2 jumped the queue** (owner request, 2026-08-18) — both only touch pure
-render/game files plus one new transient (unsaved) `ActionState` value (`'stalking'`), no
-persisted store fields or save schema, so it was safe to do ahead of Phases 7–8. **A4 (genetics
-wiring) still waits** for those phases to land, as planned — it's the first phase here that
-actually needs the migration system.
+**Phases A1–A3 jumped the queue** (owner request, 2026-08-18) — all three only touch pure
+render/game files plus new transient (unsaved) `ActionState` values (`'stalking'`, `'grooming'`,
+`'stretching'`, `'kneading'`), no persisted store fields or save schema, so it was safe to do ahead
+of Phases 7–8. **A4 (genetics wiring) still waits** for those phases to land, as planned — it's the
+first phase here that actually needs the migration system.
 
 ## Status
 
@@ -35,7 +35,15 @@ actually needs the migration system.
   deterministic manual `tick()` stepping in a real browser (paused `timeScale`, drove `tick()`
   directly to land on exact frames) — slink, gallop's stretch-and-gather, strut's high step, and
   the full stalk→pounce→play sequence all confirmed visually.
-- ⬜ A3 (idle animation library) — not started.
+- ✅ **Phase A3 — done** (commit `82f0a69`). Three new idle actions — grooming (flank-lick or
+  paw-wash, picked per session), stretching (a new purpose-built low-slung silhouette, cross-faded
+  like the seated one), kneading — rolled alongside zoomies/sitting in the existing idle-decision
+  weighted roll, uninterruptible once started (unlike sitting), with grooming's odds biased up by
+  low hygiene. All three reuse the seated silhouette as their base pose. Also added while in the
+  area: a tail-wrap curl once seated (ramps in over ~1.2s; needed real care around the
+  facing-mirror math, now pinned down by a test) and a per-ear ear-flick twitch. Verified live via
+  deterministic state forcing in a real browser, including specifically checking the tail-wrap
+  direction on both facings.
 - ⬜ A4–A7 — not started.
 
 ## Decisions made (owner-confirmed, do not re-litigate)
