@@ -29,6 +29,17 @@ export interface Appearance {
   spotted: boolean
 }
 
+// Scales a #rrggbb color toward black — used to shade the far-side pair
+// of legs slightly darker than the near pair, which is most of what sells
+// the flat shape-cat as having an actual left and right side.
+export function darkenHex(hex: string, factor: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  const r = Math.round(((n >> 16) & 0xff) * factor)
+  const g = Math.round(((n >> 8) & 0xff) * factor)
+  const b = Math.round((n & 0xff) * factor)
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
+}
+
 // Turns a pet's underlying genetics (allele pairs) into the actual values
 // PetSprite needs to draw it — resolving each trait's phenotype first.
 export function deriveAppearance(genetics: Genetics): Appearance {

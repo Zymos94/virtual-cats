@@ -12,7 +12,13 @@ export function getTailMood(pet: Pet): TailMood {
   if (pet.action === 'petting') return 'content'
   if (pet.action === 'playing' && pet.targetPetId) return 'social'
   if (pet.action === 'playing') return 'agitated'
+  // Zoomies and pouncing are pure play — the same lively swish as playing
+  // with a friend, not the annoyed flick 'agitated' drives.
+  if (pet.action === 'zoomies' || pet.action === 'pouncing') return 'social'
   if (pet.needs.hunger < 30 || pet.needs.happiness < 30) return 'agitated'
+  // A seated cat holds its tail calm and curled, wherever its happiness
+  // sits — the sway of 'content' would fight the wrapped-around pose.
+  if (pet.action === 'sitting') return 'neutral'
   if (pet.needs.happiness > 70 && pet.action !== 'walking') return 'content'
   return 'neutral'
 }
@@ -69,8 +75,13 @@ export function getTailAnchorLocal(pet: Pet, now: number): { x: number; y: numbe
   // fixed-shape body/head/legs) it isn't inside the SVG's own CSS mirror
   // for free.
   const x = pet.facing === 'left' ? SVG_WIDTH - TAIL_ANCHOR_LOCAL.x : TAIL_ANCHOR_LOCAL.x
+  // The rear end drops when seated (haunches on the ground) and further
+  // when lying asleep — the tail attach point follows it down so the chain
+  // rests on the floor beside the cat instead of floating mid-air. The
+  // chain's own easing carries the segments there smoothly.
+  const postureDrop = pet.action === 'sitting' ? 20 : pet.action === 'sleeping' ? 24 : 0
   return {
     x: x + swing.x,
-    y: (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) + swing.y,
+    y: (mood === 'content' ? TAIL_ANCHOR_LOCAL.y - TAIL_RAISE_PX : TAIL_ANCHOR_LOCAL.y) + postureDrop + swing.y,
   }
 }

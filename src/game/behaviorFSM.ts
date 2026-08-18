@@ -1,5 +1,6 @@
 import type { Pet } from '../types/pet'
 import type { AttentionTarget } from './attention'
+import { getLifeStage } from './lifeStage'
 import { randomPointInBounds } from './movement'
 import { WALL_BAND_FRACTION } from './roomLayout'
 
@@ -21,6 +22,43 @@ const SOCIAL_PLAYING_DURATION_MS = 4000
 // How far beside the other cat to walk to, rather than exactly on top of
 // it — sprites shouldn't fully overlap when they "meet up".
 const SOCIAL_APPROACH_OFFSET = 50
+
+// Odds per idle decision (i.e., every IDLE_PAUSE or so with nothing to
+// want) of a zoomies burst, for a cat energetic and happy enough for one.
+// Kittens are the ones famous for this; seniors basically never.
+const ZOOMIES_CHANCE = { kitten: 0.22, adult: 0.08, senior: 0.02 }
+const ZOOMIES_MIN_ENERGY = 55
+const ZOOMIES_MIN_HAPPINESS = 50
+const ZOOMIES_MIN_MS = 3500
+const ZOOMIES_EXTRA_MS = 3500
+// Reaching a zoomies waypoint sometimes turns into a flying hop into the
+// next sprint rather than just a new heading.
+const ZOOMIES_HOP_CHANCE = 0.35
+const ZOOMIES_HOP_DISTANCE = 90
+const ZOOMIES_HOP_DURATION_MS = 420
+
+// Odds per idle decision of parking on the haunches for a while instead
+// of wandering — the cozy default a real cat picks constantly.
+const SIT_CHANCE = 0.3
+const SIT_MIN_MS = 6000
+const SIT_EXTRA_MS = 8000
+
+// Shared by idle and sitting: stand up / set off toward the single thing
+// this pet currently wants most.
+function walkToward(pet: Pet, target: AttentionTarget, now: number): Pet {
+  const isCat = target.kind === 'cat'
+  const destination = isCat
+    ? { x: target.position.x + SOCIAL_APPROACH_OFFSET, y: target.position.y }
+    : target.position
+  return {
+    ...pet,
+    action: 'walking',
+    destination,
+    targetItemId: isCat ? null : target.id,
+    targetPetId: isCat ? target.id : null,
+    actionStartedAt: now,
+  }
+}
 
 // Decides what a pet should be doing next. Pure function: Pet -> Pet, no
 // side effects. Movement itself happens separately in movement.ts, driven
@@ -47,21 +85,43 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
       }
 
       if (ctx.bestTarget) {
-        const isCat = ctx.bestTarget.kind === 'cat'
-        const destination = isCat
-          ? { x: ctx.bestTarget.position.x + SOCIAL_APPROACH_OFFSET, y: ctx.bestTarget.position.y }
-          : ctx.bestTarget.position
+        return walkToward(pet, ctx.bestTarget, ctx.now)
+      }
+
+      // Nothing in particular to want — pick between a zoomies burst, a
+      // long sit, or an ambling wander. One roll decides, so the odds
+      // stay exactly the constants above.
+      const roll = Math.random()
+      const zoomiesChance =
+        pet.needs.energy > ZOOMIES_MIN_ENERGY && pet.needs.happiness > ZOOMIES_MIN_HAPPINESS
+          ? ZOOMIES_CHANCE[getLifeStage(pet.ageMs)]
+          : 0
+      const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
+
+      if (roll < zoomiesChance) {
         return {
           ...pet,
-          action: 'walking',
-          destination,
-          targetItemId: isCat ? null : ctx.bestTarget.id,
-          targetPetId: isCat ? ctx.bestTarget.id : null,
+          action: 'zoomies',
+          destination: randomPointInBounds(ctx.sceneBounds, 60, topMargin),
+          actionDurationMs: ZOOMIES_MIN_MS + Math.random() * ZOOMIES_EXTRA_MS,
+          targetItemId: null,
+          targetPetId: null,
           actionStartedAt: ctx.now,
         }
       }
 
-      const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
+      if (roll < zoomiesChance + SIT_CHANCE) {
+        return {
+          ...pet,
+          action: 'sitting',
+          destination: null,
+          actionDurationMs: SIT_MIN_MS + Math.random() * SIT_EXTRA_MS,
+          targetItemId: null,
+          targetPetId: null,
+          actionStartedAt: ctx.now,
+        }
+      }
+
       return {
         ...pet,
         action: 'walking',
@@ -70,6 +130,62 @@ export function updatePetBehavior(pet: Pet, ctx: TickContext): Pet {
         targetPetId: null,
         actionStartedAt: ctx.now,
       }
+    }
+    case 'sitting': {
+      // A good-enough reason stands the cat right up — the same wants
+      // that would break an idle pause.
+      if (ctx.bestTarget) {
+        return walkToward(pet, ctx.bestTarget, ctx.now)
+      }
+      // Someone's on their way over to play — stay seated and wait.
+      if (pet.socialClaimedBy) return pet
+      if (ctx.now - pet.actionStartedAt > pet.actionDurationMs) {
+        return { ...pet, action: 'idle', actionStartedAt: ctx.now }
+      }
+      return pet
+    }
+    case 'zoomies': {
+      if (ctx.now - pet.actionStartedAt > pet.actionDurationMs) {
+        return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      }
+      // Mid-hop: let the jump land before picking anything new.
+      if (pet.jump) return pet
+      const arrived =
+        !pet.destination ||
+        Math.hypot(pet.destination.x - pet.position.x, pet.destination.y - pet.position.y) < 12
+      if (arrived) {
+        const topMargin = ctx.sceneBounds.height * WALL_BAND_FRACTION + 20
+        const destination = randomPointInBounds(ctx.sceneBounds, 60, topMargin)
+        // Sometimes the turn into the next sprint is a flying hop. The hop
+        // lands partway along the new direction, always short of the
+        // destination, so it stays inside the room's bounds.
+        if (Math.random() < ZOOMIES_HOP_CHANCE) {
+          const dx = destination.x - pet.position.x
+          const dy = destination.y - pet.position.y
+          const dist = Math.hypot(dx, dy)
+          if (dist > ZOOMIES_HOP_DISTANCE) {
+            const to = {
+              x: pet.position.x + (dx / dist) * ZOOMIES_HOP_DISTANCE,
+              y: pet.position.y + (dy / dist) * ZOOMIES_HOP_DISTANCE,
+            }
+            return {
+              ...pet,
+              destination,
+              jump: { from: pet.position, to, progressMs: 0, durationMs: ZOOMIES_HOP_DURATION_MS },
+            }
+          }
+        }
+        return { ...pet, destination }
+      }
+      return pet
+    }
+    // In-flight at a toy — movement.ts owns this until the jump lands
+    // (which resolves back to idle for the arrival/consumption pass in
+    // petStore.tick). A missing jump means something interrupted it;
+    // recover to idle rather than hanging forever.
+    case 'pouncing': {
+      if (!pet.jump) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }
+      return pet
     }
     case 'walking': {
       if (!pet.destination) return { ...pet, action: 'idle', destination: null, actionStartedAt: ctx.now }

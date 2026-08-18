@@ -189,6 +189,47 @@ names/card layout. M8–M18 (all committed, see `git log`):
    drop-target CSS class (used by `PetSprite`/`CatAvatar`/`ItemAvatar` to
    detect "dropped back in the menu") is now `.game-panel`.
 
+### M19 (same day, two commits): ball throw fixed for real + natural animation
+
+1. **Ball throw** — the M13/post-M18 physics never actually threw right:
+   release velocity was sampled from one ~8ms pointer delta (noisy, and
+   stale — pause-then-release launched with pre-pause velocity), only 12%
+   of the swipe became travel, friction wrongly applied mid-air, and the
+   ball's rolling friction (0.15) was so low that everything else had
+   been squashed to compensate. Now: swipe measured over a 100ms window
+   (`ItemSprite`), `GROUND_RATIO` 0.55, no air friction, each floor
+   bounce scrubs ground speed (`BOUNCE_GROUND_KEEP`), rolling friction +
+   a constant `ROLL_DECEL` finish the roll decisively. First test suite
+   for `itemPhysics`. Also fixed a claim leak: a cat giving up on an item
+   (airborne, or a missed pounce) now releases `claimedBy`.
+2. **Natural cat animation** — the big one:
+   - *Gaits*: pets carry `currentSpeed` (eased, `ACCEL`/`DECEL`) toward
+     amble/trot/run targets by intent (wander vs. wanting something vs.
+     zoomies), and `stridePhase` advances by distance traveled — legs
+     never skate. All in `movement.ts`.
+   - *New actions*: `sitting` (idle cats park on their haunches),
+     `zoomies` (happy energetic cats sprint between random points,
+     kittens most — chances in `behaviorFSM.ts`), `pouncing` (final
+     ~90px approach to a grounded toy becomes a leap; store-side trigger
+     in `tick()` next to arrival/consumption). Jumps are a generic
+     `pet.jump` ballistic ground-track (`JumpState`) — zoomies also hop
+     with it; render derives the visible arc, sim never leaves the floor.
+   - *Rendering* (`PetSprite` + new `catPose.ts`): two-bone IK legs
+     (hip→knee→foot, hock/elbow bend toward the tail, far pair darkened
+     via `darkenHex`), purpose-built seated silhouette cross-faded with
+     the standing body (NOTE: rotating the standing ellipse into a sit
+     was tried and looked wrong — don't revisit), lying-asleep squash
+     with tucked paws, ground shadow that stays down during hops, and
+     real eyes: whites + iris + vertical slit pupils that track a gaze
+     target (attention target > destination > nearby mouse, resolved in
+     `resolveGazeWorld`), eye positions sliding across the face as a
+     fake head-turn, per-cat desynced blinking, closed-eye arcs for
+     sleep/petting. Cosmetic easing (sit/lie/gaze) lives in refs inside
+     `PetSprite`; the sim only knows discrete actions.
+   - Tail anchor drops with posture (`tailMood.ts`) so a seated/lying
+     cat's tail pools on the ground.
+   - Tests for movement gaits/jumps and the new FSM states (31 total).
+
 Also in this window: **needs decay slowed ~10x** for the cozy-pacing goal,
 and a **Sims-style speed control** was added (pause/1x/4x/16x buttons,
 `src/components/SaveLoadControls.tsx` + `timeScale` in the store) — it

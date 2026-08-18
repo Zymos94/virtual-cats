@@ -87,6 +87,18 @@ const SOCIAL_HAPPINESS_BOOST = 15 // per cat, modest — playing together is fre
 const PETTING_BASE_RATE = 2
 const PETTING_AFFECTION_BONUS = 8
 
+// Pounce: within this range of a grounded toy, the final approach becomes
+// a leap (see tick's pounce step). The minimum keeps a cat already
+// basically on top of the toy from doing a zero-length hop.
+const POUNCE_RANGE = 90
+const POUNCE_MIN_RANGE = 24
+const POUNCE_BASE_MS = 260
+const POUNCE_MS_PER_PX = 2.2
+// A pounce landing further than this from where the toy actually is now
+// (it rolled on, or got re-thrown mid-leap) is a miss — no consumption,
+// the cat just reconsiders from where it landed.
+const POUNCE_MISS_DISTANCE = 48
+
 // Very high on purpose — the panel should feel grabby, not slippery. A
 // released panel travels only a token distance before stopping, unlike a
 // thrown item.
@@ -175,6 +187,10 @@ function makeStarterPet(overrides: Pick<Pet, 'id' | 'name' | 'position' | 'genet
     socialClaimedBy: null,
     affection: 60,
     ageMs: STARTER_AGE_MS,
+    currentSpeed: 0,
+    stridePhase: 0,
+    jump: null,
+    actionDurationMs: 0,
     ...overrides,
   }
 }
@@ -242,6 +258,10 @@ function sanitizeLoadedPet(pet: Pet): Pet {
     socialClaimedBy: null,
     affection: pet.affection ?? 60,
     ageMs: pet.ageMs ?? STARTER_AGE_MS,
+    currentSpeed: 0,
+    stridePhase: 0,
+    jump: null,
+    actionDurationMs: 0,
   }
 }
 
@@ -443,6 +463,30 @@ export const usePetStore = create<PetStore>((set) => ({
           }
         }
 
+        // Close enough to a grounded toy — leap the last stretch instead
+        // of walking right up to it. Lives here (not the FSM) because it
+        // needs the item's definition and live position; the same reason
+        // arrival/consumption is handled centrally below.
+        if (decided.action === 'walking' && decided.targetItemId && !decided.jump) {
+          const target = sceneItems[decided.targetItemId]
+          const definition = target && ITEM_DEFINITIONS.find((d) => d.id === target.itemTypeId)
+          if (target && definition?.category === 'toy' && target.height <= 0.5) {
+            const pounceDist = Math.hypot(target.position.x - decided.position.x, target.position.y - decided.position.y)
+            if (pounceDist < POUNCE_RANGE && pounceDist > POUNCE_MIN_RANGE) {
+              decided = {
+                ...decided,
+                action: 'pouncing',
+                jump: {
+                  from: decided.position,
+                  to: target.position,
+                  progressMs: 0,
+                  durationMs: POUNCE_BASE_MS + pounceDist * POUNCE_MS_PER_PX,
+                },
+              }
+            }
+          }
+        }
+
         let finalPet = movePet(decided, deltaMs)
 
         // Arrived at a targeted item this tick — use it: apply its effect
@@ -453,10 +497,15 @@ export const usePetStore = create<PetStore>((set) => ({
         // it's still airborne (mid-bounce, or the player just re-threw
         // it), don't "use" something floating above the floor — just give
         // up this attempt and reconsider next cycle.
-        if (pet.action === 'walking' && finalPet.action === 'idle' && finalPet.targetItemId) {
+        const wasApproaching = pet.action === 'walking' || pet.action === 'pouncing' || decided.action === 'pouncing'
+        if (wasApproaching && finalPet.action === 'idle' && finalPet.targetItemId) {
           const placedItem = sceneItems[finalPet.targetItemId]
           const definition = placedItem && ITEM_DEFINITIONS.find((d) => d.id === placedItem.itemTypeId)
-          if (placedItem && definition && placedItem.height <= 0.5) {
+          const missedIt =
+            placedItem &&
+            Math.hypot(placedItem.position.x - finalPet.position.x, placedItem.position.y - finalPet.position.y) >
+              POUNCE_MISS_DISTANCE
+          if (placedItem && definition && placedItem.height <= 0.5 && !missedIt) {
             let needs = finalPet.needs
             for (const key in definition.effect) {
               const need = key as keyof Needs
@@ -473,6 +522,9 @@ export const usePetStore = create<PetStore>((set) => ({
               sceneItems[placedItem.id] = { ...placedItem, claimedBy: null }
             }
           } else {
+            // Giving up (item airborne, or a pounce that missed) — release
+            // the claim too, or nobody could ever target this item again.
+            if (placedItem) sceneItems[placedItem.id] = { ...placedItem, claimedBy: null }
             finalPet = { ...finalPet, targetItemId: null }
           }
         }
@@ -548,7 +600,7 @@ export const usePetStore = create<PetStore>((set) => ({
       if (!pet) return state
       const pets = releaseSocialClaims(state.pets, petId)
       return {
-        pets: { ...pets, [petId]: { ...pets[petId], action: 'held', destination: null, targetItemId: null, targetPetId: null } },
+        pets: { ...pets, [petId]: { ...pets[petId], action: 'held', destination: null, targetItemId: null, targetPetId: null, jump: null, currentSpeed: 0 } },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
     }),
@@ -566,7 +618,7 @@ export const usePetStore = create<PetStore>((set) => ({
       }
       const pets = releaseSocialClaims(state.pets, petId)
       return {
-        pets: { ...pets, [petId]: { ...pets[petId], action: 'petting', destination: null, targetItemId: null, targetPetId: null } },
+        pets: { ...pets, [petId]: { ...pets[petId], action: 'petting', destination: null, targetItemId: null, targetPetId: null, jump: null, currentSpeed: 0 } },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
       }
     }),
@@ -610,6 +662,8 @@ export const usePetStore = create<PetStore>((set) => ({
             destination: null,
             targetItemId: null,
             targetPetId: null,
+            jump: null,
+            currentSpeed: 0,
           },
         },
         sceneItems: releaseClaim(state.sceneItems, pet.targetItemId),
@@ -729,6 +783,10 @@ export const usePetStore = create<PetStore>((set) => ({
         // A real newborn — starts life as a kitten and grows up in real
         // time, unlike its already-grown parents.
         ageMs: 0,
+        currentSpeed: 0,
+        stridePhase: 0,
+        jump: null,
+        actionDurationMs: 0,
       }
 
       return {
@@ -761,3 +819,4 @@ usePetStore.subscribe((state) => {
   lastSaveAt = now
   saveToLocalStorage(state.pets, state.sceneItems)
 })
+
