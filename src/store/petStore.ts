@@ -17,8 +17,8 @@ import {
 } from '../game/attention'
 import { clampToRoom, stepItemPhysics } from '../game/itemPhysics'
 import { clearSavedGame, loadFromLocalStorage, saveToLocalStorage } from './persist'
-import { getTailAnchorLocal } from '../game/tailMood'
-import { initialSegments, stepChain, type Point } from '../game/tailPhysics'
+import { getTailAnchorLocal, getTailTipOffsetLocal } from '../game/tailMood'
+import { initialSegments, resolveTailChain, type Point } from '../game/tailPhysics'
 import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from '../game/spriteConstants'
 import { STARTER_AGE_MS } from '../game/lifeStage'
 import { playSound, startLoop, stopAllLoops, stopLoop } from '../game/sound'
@@ -46,6 +46,15 @@ interface PetStore {
   // here (not component state) so they keep relaxing every real frame even
   // for pets that aren't currently moving. See tailPhysics.ts for why.
   tailSegments: Record<string, Point[]>
+  // Where each pet's tail *tip* is currently reaching for, in scene
+  // coordinates — eased toward the mood-driven desired target
+  // (tailMood.ts's getTailTipOffsetLocal) every tick rather than snapping.
+  // This single eased point is where all of the tail's lag/momentum feel
+  // now lives (see tailPhysics.ts's resolveTailChain: it always resolves
+  // the chain to reach *exactly* whatever target it's given, so the target
+  // itself must already be lagging for the tip to visibly trail). Not
+  // persisted, same as tailSegments.
+  tailTipTargets: Record<string, Point>
   sceneBounds: { width: number; height: number }
   decayAccumulatorMs: number
   selectedPetId: string | null
@@ -413,6 +422,7 @@ export const usePetStore = create<PetStore>((set) => ({
   sceneItems: initialState.sceneItems,
   mice: {},
   tailSegments: {},
+  tailTipTargets: {},
   sceneBounds: { width: window.innerWidth, height: window.innerHeight },
   decayAccumulatorMs: 0,
   mouseHolePeeking: false,
@@ -1315,7 +1325,16 @@ export const usePetStore = create<PetStore>((set) => ({
       // changes — the chain's own easing then carries the segments there
       // smoothly, the same as it handles any other anchor movement, with
       // no separate one-shot correction needed at the flip instant.
+      //
+      // Two things are tracked per pet: the anchor (exact, zero-lag — the
+      // body attach point) and the tip target (eased toward its own
+      // mood-driven desired position every tick — see tailTipTargets above
+      // for why the lag has to live here rather than in the chain solve
+      // itself). resolveTailChain then fills in the curve between the two
+      // fresh every tick.
+      const TIP_EASE = 0.18
       const tailSegments: Record<string, Point[]> = {}
+      const tailTipTargets: Record<string, Point> = {}
       for (const id in moved) {
         if (moved[id].inSuitcase) continue
         const pet = moved[id]
@@ -1325,9 +1344,18 @@ export const usePetStore = create<PetStore>((set) => ({
         const anchorLocal = getTailAnchorLocal(pet, now, chasingFleeingMouse)
         const anchorWorld = { x: pet.position.x + anchorLocal.x, y: pet.position.y + anchorLocal.y }
 
+        const tipOffset = getTailTipOffsetLocal(pet, now, chasingFleeingMouse)
+        const desiredTip = { x: anchorWorld.x + tipOffset.x, y: anchorWorld.y + tipOffset.y }
+        const prevTip = state.tailTipTargets[id] ?? desiredTip
+        const easedTip = {
+          x: prevTip.x + (desiredTip.x - prevTip.x) * TIP_EASE,
+          y: prevTip.y + (desiredTip.y - prevTip.y) * TIP_EASE,
+        }
+        tailTipTargets[id] = easedTip
+
         const segments =
           state.tailSegments[id] ?? initialSegments(anchorWorld, TAIL_SEGMENTS, TAIL_LINK_LENGTH)
-        tailSegments[id] = stepChain(segments, anchorWorld, TAIL_LINK_LENGTH)
+        tailSegments[id] = resolveTailChain(segments, anchorWorld, easedTip, TAIL_LINK_LENGTH)
       }
 
       return {
@@ -1336,6 +1364,7 @@ export const usePetStore = create<PetStore>((set) => ({
         mice,
         decayAccumulatorMs: accumulator,
         tailSegments,
+        tailTipTargets,
         panelPosition,
         panelVelocity,
         mouseHolePeeking,
@@ -1612,6 +1641,7 @@ export const usePetStore = create<PetStore>((set) => ({
       sceneItems: {},
       mice: {},
       tailSegments: {},
+      tailTipTargets: {},
       selectedPetId: null,
       mouseHolePeeking: false,
       mouseHolePeekStartedAt: 0,

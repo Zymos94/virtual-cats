@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Pet } from '../types/pet'
-import { getTailAnchorLocal } from './tailMood'
+import { getTailAnchorLocal, getTailTipOffsetLocal } from './tailMood'
 import { STARTER_AGE_MS } from './lifeStage'
+
+const NEEDS = { hunger: 70, energy: 85, hygiene: 90, happiness: 60 }
 
 function makePet(overrides: Partial<Pet> = {}): Pet {
   return {
@@ -182,5 +184,67 @@ describe('getTailAnchorLocal — tracks the body it is actually attached to', ()
     )
     const standing = getTailAnchorLocal(makePet({ action: 'idle', currentSpeed: 100 }), 0)
     expect(Math.abs(galloping.y - standing.y)).toBeGreaterThan(Math.abs(trotting.y - standing.y))
+  })
+})
+
+// getTailTipOffsetLocal is the tip's own resting reach/direction, added to
+// the (unit-tested above) anchor to get the FABRIK target — see the M25
+// entry in DEVLOG.md for why this is a separate function from the anchor
+// rather than folded into it.
+describe('getTailTipOffsetLocal — mood shapes the resting reach', () => {
+  it('content carries the tip up and in, shorter than neutral trails it down and out', () => {
+    const content = getTailTipOffsetLocal(makePet({ needs: { ...NEEDS, happiness: 90 } }), 0)
+    const neutral = getTailTipOffsetLocal(makePet(), 0)
+    expect(content.y).toBeLessThan(0) // up
+    expect(neutral.y).toBeGreaterThan(0) // down
+    expect(Math.hypot(content.x, content.y)).toBeLessThan(Math.hypot(neutral.x, neutral.y))
+  })
+
+  it('agitated actually moves over time — the flick is not a static offset', () => {
+    const pet = makePet({ needs: { ...NEEDS, hunger: 10 } })
+    const atStart = getTailTipOffsetLocal(pet, 0)
+    const midFlick = getTailTipOffsetLocal(pet, 400)
+    expect(atStart.x).not.toBeCloseTo(midFlick.x, 0)
+  })
+
+  it('social swishes back and forth over time too', () => {
+    const pet = makePet({ action: 'playing', targetPetId: 'other-pet' })
+    const a = getTailTipOffsetLocal(pet, 0)
+    const b = getTailTipOffsetLocal(pet, 325) // quarter of the 650ms-period swish
+    expect(a.x).not.toBeCloseTo(b.x, 0)
+  })
+})
+
+describe('getTailTipOffsetLocal — posture overrides ramp in, matching the anchor pattern', () => {
+  it('seated: reaches forward once settled instead of neutral’s backward trail', () => {
+    const freshlySeated = getTailTipOffsetLocal(
+      makePet({ action: 'sitting', actionStartedAt: 1000 }),
+      1000,
+    )
+    const settledSeated = getTailTipOffsetLocal(
+      makePet({ action: 'sitting', actionStartedAt: 0 }),
+      1000,
+    )
+    expect(freshlySeated.x).toBeLessThan(0) // still trailing back like neutral
+    expect(settledSeated.x).toBeGreaterThan(0) // wrapped forward
+  })
+
+  it('held: settles onto a near-straight-down reach, no leftover mood direction', () => {
+    const settledHeld = getTailTipOffsetLocal(makePet({ action: 'held', actionStartedAt: 0 }), 1000)
+    expect(Math.abs(settledHeld.x)).toBeLessThan(3)
+    expect(settledHeld.y).toBeGreaterThan(20) // straight down, and a long reach
+  })
+
+  it('stretching: settles onto an extended-back-and-up reach, not neutral’s down-trail', () => {
+    const freshStretch = getTailTipOffsetLocal(
+      makePet({ action: 'stretching', actionStartedAt: 1000 }),
+      1000,
+    )
+    const settledStretch = getTailTipOffsetLocal(
+      makePet({ action: 'stretching', actionStartedAt: 0 }),
+      1000,
+    )
+    expect(freshStretch.y).toBeGreaterThan(0)
+    expect(settledStretch.y).toBeLessThan(freshStretch.y)
   })
 })

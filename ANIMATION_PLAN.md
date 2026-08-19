@@ -242,7 +242,11 @@ should take. Then wire **tail length (incl. bob), leg length, fur length** as in
 following the existing allele-pair pattern in `genetics.ts` (the `faceShape` trait added in M24 is
 a worked example of the whole pipeline: type → `genetics.ts` dominance/mutation → starter-cat
 values → store load-patch → derived-appearance resolution → renderer lookup), with starter-cat
-values, mutation, and breed-name extension ("Bobtail", "Fluffy", …). **Save migration required for
+values, mutation, and breed-name extension ("Bobtail", "Fluffy", …). Tail length specifically is
+now cheap to wire: `resolveTailChain`'s M25 rewrite (`tailPhysics.ts`) already takes segment count
+and `linkLength` as plain parameters rather than baking `TAIL_SEGMENTS`/`TAIL_LINK_LENGTH` in, so a
+`BodyPlan`-driven tail length is a call-site change, not another physics rewrite — a bob tail is
+just a shorter `linkLength`/fewer segments fed into the same solve. **Save migration required for
 real** once Phase 7 lands; until then, follow the ad-hoc `?? default` load-patch precedent
 `faceShape` used in `sanitizeLoadedPet` (`petStore.ts`) rather than blocking on Phase 7 — that
 patch is cheap to later fold into a real migration, and matches how every other field added since
@@ -257,8 +261,11 @@ Author front and back body/leg geometry; `pickView` with hysteresis binning to 3
 cover diagonals for now). Every pose must work in every view: gaits, sit, lie, groom loops (a
 front-view groom can be a simplified variant — authored, not skipped). **Top risk: the tail.** It
 is physics-simulated in world 2D with a facing-aware anchor that took two attempts to get right
-(see DEVLOG's post-M18 postmortem). Per-view anchor mapping needs the same care; acceptance = no
-tail clipping through the body on any view switch.
+(see DEVLOG's post-M18 postmortem) and a full rewrite to stop it winding into a coil under
+sustained sway (M25 — `resolveTailChain`'s FABRIK solve, double-pinned between the anchor and a
+mood-driven tip target). Per-view anchor mapping needs the same care; a per-view tip-offset
+function alongside `getTailTipOffsetLocal` is the natural extension point once views exist.
+Acceptance = no tail clipping through the body on any view switch.
 **Verify:** walk a cat in a circle; views switch at sane angles without flicker; back view's
 raised tail and front view's cursor-tracking face both land.
 

@@ -3,103 +3,123 @@ export interface Point {
   y: number
 }
 
-const EASE = 0.35
-// Blends each link's own direction partway toward the *previous* link's
-// direction (anchor→segment0, then segment0→segment1, and so on) — a small
-// resistance to bending, the one thing a pure ease+distance-constraint
-// chain has none of on its own. Found live: over many minutes of a
-// sustained small idle sway ('content' mood's slow sine swing runs for as
-// long as a cat stays happy — hundreds of cycles in a real play session),
-// the chain can progressively wind itself into a tight coil, since nothing
-// ever pulls it back toward straight — each individual link stays exactly
-// linkLength from its neighbor throughout (the distance constraint is
-// never violated), but the *overall* tip-to-base reach can shrink to a
-// third of its stretched-out length or less, reading as a stubby clump
-// glued to the body once the cat later holds still (mood 'neutral' — e.g.
-// sitting — has zero swing of its own, so nothing unwinds it further; the
-// coiled shape just freezes there). A pure numeric/short-duration test
-// won't catch this — it only shows up after sustained real-time motion, so
-// this was found via a full free-running multi-minute simulation, not a
-// single-transition check.
-const STRAIGHTEN = 0.18
+// Number of backward+forward passes run per tick. Low on purpose: a full
+// convergence (10+ iterations) pulls an under-constrained chain toward
+// whatever the *seed* happens to bias it toward, and since the seed is
+// last tick's own shape (see resolveTailChain below), a handful of
+// iterations is enough to keep both ends honest every tick without erasing
+// the bend the chain already had — that's what keeps the tail reading as a
+// continuous, flowing curve rather than snapping straight at the target
+// every frame.
+const ITERATIONS = 4
 
-// Each segment eases toward the one in front of it, then gets pulled back
-// to a fixed distance (linkLength) from it — like a short rope made of
-// rigid links — with a small straightening bias (see STRAIGHTEN above)
-// layered on top so the chain can't wind itself into a permanent coil.
-// That combination is what gives a trailing chain of circles its natural,
-// slightly-lagging swing while still reading as one tail-length shape.
-//
-// This must run every real animation frame, even for a pet that isn't
-// currently moving — a tail that only re-simulates when its anchor moves
-// freezes mid-shape the instant a cat stops walking, which then looks
-// broken once the idle-sway/flick rotation is applied on top of a frozen,
-// still-stretched-out shape. So this lives in the central game loop
-// (petStore.tick), not a React effect tied to position changes.
-export function stepChain(prevSegments: Point[], anchor: Point, linkLength: number): Point[] {
-  const next: Point[] = []
-  let target = anchor
-  let prevDir: Point | null = null
-
-  for (const seg of prevSegments) {
-    const eased = {
-      x: seg.x + (target.x - seg.x) * EASE,
-      y: seg.y + (target.y - seg.y) * EASE,
-    }
-    const dx = eased.x - target.x
-    const dy = eased.y - target.y
-    const dist = Math.hypot(dx, dy) || 0.0001
-    let dirX = dx / dist
-    let dirY = dy / dist
-    if (prevDir) {
-      const blendedX = dirX * (1 - STRAIGHTEN) + prevDir.x * STRAIGHTEN
-      const blendedY = dirY * (1 - STRAIGHTEN) + prevDir.y * STRAIGHTEN
-      const blendedLen = Math.hypot(blendedX, blendedY) || 1
-      dirX = blendedX / blendedLen
-      dirY = blendedY / blendedLen
-    }
-    const constrained = {
-      x: target.x + dirX * linkLength,
-      y: target.y + dirY * linkLength,
-    }
-    next.push(constrained)
-    prevDir = { x: dirX, y: dirY }
-    target = constrained
-  }
-
-  return next
+// Moves `point` so it sits exactly `dist` away from `from`, preserving
+// whatever direction it currently is from `from` (only the distance
+// changes). This is the one operation FABRIK is built from — apply it
+// walking tip-to-anchor (pin the tip, drag everything else in line) and
+// then anchor-to-tip (pin the anchor, drag everything else back out) and a
+// chain of fixed-length links ends up simultaneously close to both a fixed
+// start and a fixed end, without ever needing to know *how* it got there.
+function moveToward(point: Point, from: Point, dist: number): Point {
+  const dx = point.x - from.x
+  const dy = point.y - from.y
+  const d = Math.hypot(dx, dy) || 0.0001
+  return { x: from.x + (dx / d) * dist, y: from.y + (dy / d) * dist }
 }
 
-// Two related fixed points of stepChain above, both only reachable when the
-// anchor holds completely still for a while (mood 'neutral' — see
-// tailMood.ts — deliberately gives the anchor zero swing, and a stationary
-// cat's bob is zero too, so "sitting still" really does mean a perfectly
-// static anchor tick after tick):
+// Resolves a chain of `prevSegments.length` fixed-length links stretched
+// between a true, always-correct `anchor` (the body attach point) and a
+// desired `target` (where the free tip is currently reaching for) — a
+// small, real-time FABRIK solve, seeded each tick from where the chain
+// already was for visual continuity.
 //
-// 1. A perfectly straight line (every segment's x exactly equal to the
-//    anchor's) never relaxes out of that shape: easing a segment toward a
-//    target directly above/below it, then re-constraining to exactly
-//    linkLength along that same vertical line, exactly reproduces the
-//    segment's own starting position, forever.
-// 2. A segment placed *exactly on* its own target (zero distance) stays
-//    there permanently too — the direction to re-constrain along is
-//    undefined at zero distance, and easing a point toward a target it's
-//    already sitting on cannot move it at all, regardless of EASE.
+// This replaces the old `stepChain`, which only ever knew about the
+// anchor: it built the chain forward, link by link, easing each new
+// segment toward the previous one with nothing pinning the *far* end to
+// anything meaningful. That let the whole chain's overall shape wander
+// unboundedly over sustained motion — every individual link stayed the
+// right length, but nothing stopped the accumulated bend from slowly
+// winding into a permanent coil over hundreds of cycles (see the M23
+// postmortem in DEVLOG.md; a heuristic straightening bias patched the one
+// sway pattern that was actually tested, not the underlying gap).
 //
-// The old formula (`i * linkLength`, `x: anchor.x`) hit both at once for
-// segment 0 specifically (i=0 lands exactly on the anchor) and hit #1 for
-// every other segment (all sharing the anchor's x). Found live: a
-// freshly-created tail (a new game, a bred kitten, a mouse's first pounce
-// target) whose owner then sits and holds still never relaxed out of a
-// ramrod-straight shape with its base glued to the attach point, since
-// nothing ever perturbed either fixed point. `(i + 1)` gives every segment,
-// including the first, a nonzero starting distance from the anchor along a
-// gently curved (not collinear) path, so normal chain physics can actually
-// take over from frame one — the same as any tail that's already settled
-// into a natural curl.
+// Pinning *both* ends every tick closes that gap structurally rather than
+// by tuning a bias constant harder: each frame's backward pass walks from
+// the true target back to the anchor, and the forward pass walks from the
+// true anchor back out to the target, so any drift that crept in gets
+// pulled back toward a configuration consistent with where the tail
+// *actually* is, not just nudged a fixed fraction toward "less bent."
+// A chain that's perfectly still (anchor and target both unmoving) is a
+// true fixed point of this iteration — once it satisfies both ends, the
+// backward and forward passes reproduce the exact same positions forever,
+// so there's no channel for slow numerical drift the way the old ease-based
+// version had.
+export function resolveTailChain(
+  prevSegments: Point[],
+  anchor: Point,
+  target: Point,
+  linkLength: number,
+): Point[] {
+  const n = prevSegments.length
+  const totalLength = linkLength * n
+  const dx = target.x - anchor.x
+  const dy = target.y - anchor.y
+  const distToTarget = Math.hypot(dx, dy)
+
+  // Target further away than the chain can reach: there's only one valid
+  // shape (fully extended, pointed straight at it), and FABRIK's own
+  // iteration doesn't need to run to find it.
+  if (distToTarget >= totalLength) {
+    const dir =
+      distToTarget > 0.0001 ? { x: dx / distToTarget, y: dy / distToTarget } : { x: 0, y: 1 }
+    return Array.from({ length: n }, (_, i) => ({
+      x: anchor.x + dir.x * linkLength * (i + 1),
+      y: anchor.y + dir.y * linkLength * (i + 1),
+    }))
+  }
+
+  // joints[0] is the anchor itself; joints[1..n] are the n rendered
+  // segments (joints[n] is the tip). Seeding from last tick's actual
+  // positions is what gives the chain its lag/momentum feel — a fresh
+  // solve from a straight guess every tick would have none.
+  const joints: Point[] = [anchor, ...prevSegments]
+
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    // Backward: snap the tip onto the target, then walk back toward the
+    // anchor, each joint staying linkLength from the one now in front of it.
+    joints[n] = target
+    for (let i = n - 1; i >= 1; i--) {
+      joints[i] = moveToward(joints[i], joints[i + 1], linkLength)
+    }
+    // Forward: snap the base back onto the true anchor (the backward pass
+    // above will generally have dragged it away), then walk back out.
+    joints[0] = anchor
+    for (let i = 1; i <= n; i++) {
+      joints[i] = moveToward(joints[i], joints[i - 1], linkLength)
+    }
+  }
+
+  return joints.slice(1)
+}
+
+// Seeds a brand-new tail (a fresh game, a bred kitten, a mouse's first
+// pounce target creating the very first tick a pet exists) with a gentle
+// existing curve rather than a straight line. A perfectly straight seed
+// collinear with the anchor is a degenerate fixed point of the FABRIK
+// solve above (same reasoning as the old stepChain: "move toward a fixed
+// neighbor, preserving direction" applied to a straight line reproduces
+// that straight line forever) — the `sin` offset breaks collinearity so
+// normal chain motion can take over from the very first tick, the same as
+// any tail that's already settled into a natural resting curl.
 export function initialSegments(anchor: Point, segmentCount: number, linkLength: number): Point[] {
   return Array.from({ length: segmentCount }, (_, i) => ({
     x: anchor.x + Math.sin((i + 1) * 0.6) * linkLength * 0.4,
     y: anchor.y + (i + 1) * linkLength,
   }))
+}
+
+// Exported for tailMood.ts / petStore.ts to size a target's reach as a
+// fraction of the chain's full stretched-out length, and for tests.
+export function chainLength(segmentCount: number, linkLength: number): number {
+  return segmentCount * linkLength
 }

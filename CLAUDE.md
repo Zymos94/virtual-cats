@@ -139,17 +139,22 @@ than duplicating the math.
 - `src/game/movement.ts` — destination-seeking movement, gait speed targets, stride phase.
 - `src/game/attention.ts` — unified item/cat scoring (urgency × proximity).
 - `src/game/itemPhysics.ts` — gravity/height axis + ground bounce/friction for placed items.
-- `src/game/tailPhysics.ts` / `tailMood.ts` — chain-follow tail physics, mood-driven anchor. The
-  anchor `getTailAnchorLocal` computes must track the body's _actual_ rendered position — it
-  replicates PetSprite.tsx's own per-stride `bob`/`bodyBob` formula exactly (same Pet-object
-  inputs, must stay byte-for-byte in sync) and ramps seated/sleeping/held/stretching offsets in
-  over the pose's own elapsed time rather than snapping, matching how long the body's own eased
-  crossfade takes to fade in. A mismatch here is the single most common cause of the tail visibly
-  disconnecting from the body — see the M22 postmortem in DEVLOG.md before touching this again.
-  `stepChain` also carries a small straightening bias (`STRAIGHTEN`, M23) — with none, sustained
-  small anchor sway (the 'content' mood's slow sine sway runs continuously for as long as a cat
-  stays happy) can wind the chain into a permanent tight coil over hundreds of cycles; this only
-  shows up after minutes of real play, not a short synthetic test — see the M23 postmortem.
+- `src/game/tailPhysics.ts` / `tailMood.ts` — tail physics (M25 rewrite: a small real-time FABRIK
+  solve, `resolveTailChain`, double-pinned between an anchor and a tip target every tick — see the
+  M25 postmortem in DEVLOG.md for why this replaced the old single-anchor chain-follow, which
+  could wind itself into a permanent coil over sustained sway (M22/M23) since only one end was
+  ever pinned to ground truth). `tailMood.ts` computes both ends: `getTailAnchorLocal` (the body
+  attach point — posture only: drop/bob/wrap) and `getTailTipOffsetLocal` (the free end's own
+  mood-driven reach/direction — this is where the tail's actual expressiveness lives). The anchor
+  must track the body's _actual_ rendered position — it replicates PetSprite.tsx's own per-stride
+  `bob`/`bodyBob` formula exactly (same Pet-object inputs, must stay byte-for-byte in sync) and
+  ramps seated/sleeping/held/stretching offsets in over the pose's own elapsed time rather than
+  snapping. A mismatch here is the single most common cause of the tail visibly disconnecting from
+  the body — see the M22 postmortem before touching `getTailAnchorLocal` again. The tip's lag/
+  momentum feel lives entirely in a single eased point (`tailTipTargets` in the store) that's fed
+  into the FABRIK solve as the target — `resolveTailChain` itself always reaches _exactly_ to
+  whatever target it's given (that's what makes both ends structurally pinned), so easing has to
+  happen before the solve, not inside it.
 - `src/game/catPose.ts` — procedural leg IK + pose blend weights (sit/lie/hop).
 - `src/game/gaits.ts` — gait timing/footfall engine (walk/trot/slink/gallop/strut) + body/head/tail
   posture per gait.
@@ -236,22 +241,15 @@ section with the live URL once deployed.**
   works, just unverified).
 - Mice can't be picked up/moved by the player directly once alive — only the pre-conversion emoji
   item is draggable. Not a bug, just an intentionally unbuilt interaction (nobody's asked for it).
-- `tailPhysics.ts`'s `stepChain` has a latent numerical instability: if a segment ever lands almost
-  exactly on its own anchor, the `dist || 0.0001` fallback's `dx/dist`/`dy/dist` normalization goes
-  unstable and can diverge to `NaN`/astronomical values with no damping to recover — confirmed by
-  forcing a pet's `action` directly via `setState` (bypassing the FSM), not reachable through any
-  normal FSM-driven transition (idle → stretching → walking stayed stable over 200 ticks). Worth
-  revisiting if a future feature ever teleports a pet or swaps its action outside the FSM (e.g. a
-  save/load edge case). Related, and actually fixed (M22): a segment landing _exactly_ on its
-  anchor, or a chain perfectly collinear with a perfectly still anchor, are both genuine fixed
-  points of this same algorithm (not numerically unstable, just permanently stuck) —
-  `initialSegments` no longer seeds either shape.
-- A settled tail's resting _curl_ (as opposed to its attach point, which `getTailAnchorLocal`
-  actively tracks) is inherently path-dependent — an emergent property of the chain-follow physics'
-  history, not something a fixed anchor offset fully controls. An unusual rapid sequence of action
-  changes can occasionally leave the curl ducked behind the seated silhouette's chest/haunch shapes
-  (both drawn _after_, i.e. on top of, the tail). Confirmed this clears up starting from a fresh
-  state; not chased further — see the M22 postmortem in DEVLOG.md.
+- **(Superseded by M25 — kept as history.)** `tailPhysics.ts`'s old `stepChain` had a latent
+  numerical instability (segment landing almost exactly on its own anchor) and an open-ended,
+  history-dependent resting curl (an unusual rapid action sequence could leave it ducked behind the
+  seated silhouette). `stepChain` no longer exists — see the M25 postmortem in DEVLOG.md. The new
+  `resolveTailChain`'s analogous degenerate case (two joints coinciding exactly) is a benign stuck
+  point, not a blowup (`moveToward`'s zero-distance fallback yields a zero direction, so the point
+  simply doesn't move that call) — not exhaustively stress-tested for this exact edge case, but
+  structurally safer than the old formula since both chain ends are pinned to ground truth every
+  tick rather than accumulating from an unconstrained free end.
 
 ## Related docs
 

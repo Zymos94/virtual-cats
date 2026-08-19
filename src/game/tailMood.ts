@@ -1,7 +1,8 @@
 import type { Pet } from '../types/pet'
 import { selectGait } from './gaits'
-import { SVG_WIDTH } from './spriteConstants'
+import { SVG_WIDTH, TAIL_LINK_LENGTH, TAIL_SEGMENTS } from './spriteConstants'
 import { RUN_SPEED } from './movement'
+import { chainLength, type Point } from './tailPhysics'
 
 // A simple first pass at mood-driven tail carriage, using only the stats
 // we have today (needs + current action). 'agitated' -> a sharp flick;
@@ -194,5 +195,149 @@ export function getTailAnchorLocal(
       carriageAdjust +
       bodyBob +
       swing.y,
+  }
+}
+
+// The chain's full stretched-out length — a tip target further than this
+// from the anchor can never be reached anyway (resolveTailChain falls back
+// to a straight line), and a target *equal* to this leaves the chain no
+// slack at all to bend into a curve. Every reach fraction below is
+// deliberately well under 1 so FABRIK always has slack to work with — a
+// real tail is essentially never held perfectly straight.
+const FULL_REACH = chainLength(TAIL_SEGMENTS, TAIL_LINK_LENGTH)
+
+interface TipShape {
+  // Unit-ish direction the tip reaches toward, in the same unflipped local
+  // space as wrapCurl/swing above (facing-right, added directly — see the
+  // facing note on getTailAnchorLocal's `x`: this is a directional push
+  // layered on an already facing-corrected anchor, so it must NOT be
+  // mirrored a second time).
+  dirX: number
+  dirY: number
+  // Fraction of FULL_REACH the tip sits from the anchor at rest.
+  reach: number
+}
+
+function dir(x: number, y: number): { dirX: number; dirY: number } {
+  const d = Math.hypot(x, y) || 0.0001
+  return { dirX: x / d, dirY: y / d }
+}
+
+// Base resting shape per mood — where the *free end* of the tail reaches
+// for when nothing else (posture, gait) is overriding it. Everything here
+// is loosely modeled on how a real cat actually carries its tail: happy
+// and upright with a short, curled-in reach (a tight curve reads as a
+// contented hook, not a limp droop); a relaxed trail is long and low;
+// annoyed is taut and low, ready to snap.
+const CONTENT_SHAPE: TipShape = { ...dir(-0.35, -0.95), reach: 0.55 }
+const SOCIAL_SHAPE: TipShape = { ...dir(-0.55, -0.55), reach: 0.72 }
+const AGITATED_SHAPE: TipShape = { ...dir(-0.9, -0.05), reach: 0.85 }
+const NEUTRAL_SHAPE: TipShape = { ...dir(-0.25, 0.85), reach: 0.8 }
+
+function moodShape(mood: TailMood): TipShape {
+  switch (mood) {
+    case 'content':
+      return CONTENT_SHAPE
+    case 'social':
+      return SOCIAL_SHAPE
+    case 'agitated':
+      return AGITATED_SHAPE
+    default:
+      return NEUTRAL_SHAPE
+  }
+}
+
+// Extra sway layered on top of the base shape, as a lateral (x-only, same
+// visual language the old anchor-swing used) offset in raw px — bigger
+// than the old anchor-swing amplitudes since this now drives the tip
+// directly instead of getting damped on its way down a chain built from
+// the anchor outward.
+function tipSway(mood: TailMood, now: number): number {
+  switch (mood) {
+    case 'content':
+      // Slow, lazy drift.
+      return Math.sin(now / 1400) * 6
+    case 'social':
+      // A lively, friendly swish.
+      return Math.sin(now / 650) * 10
+    case 'agitated': {
+      // Fast snap out, slower relaxed return — see the identical shape in
+      // the old getTailSwingLocal for why this needs real time (not just a
+      // short period) to read as a flick rather than a twitch.
+      const FLICK_PERIOD_MS = 1000
+      const SNAP_FRACTION = 0.4
+      const t = (now % FLICK_PERIOD_MS) / FLICK_PERIOD_MS
+      const eased =
+        t < SNAP_FRACTION ? t / SNAP_FRACTION : 1 - (t - SNAP_FRACTION) / (1 - SNAP_FRACTION)
+      return eased * 16
+    }
+    default:
+      // Even fully at rest, a real tail is never perfectly still — a slow,
+      // two-frequency drift keeps a 'neutral' tail from reading as frozen
+      // without looking like deliberate motion.
+      return Math.sin(now / 2600) * 1.6 + Math.sin(now / 970 + 1) * 0.8
+  }
+}
+
+// Where the *free end* of the tail — as opposed to the attach point
+// getTailAnchorLocal computes above — wants to reach, as an offset added
+// to that anchor. Split out as its own function (rather than folded into
+// getTailAnchorLocal) because a real tail's expressive motion lives almost
+// entirely in the tip, not the base: the attach point mostly just follows
+// the body's own posture, while the free end is where mood/gait actually
+// read. Composed with the FABRIK solve in tailPhysics.ts, this is what
+// gives the two ends of the chain something real to reach *between*
+// instead of the old system's one anchor and an emergent, driftable tip.
+export function getTailTipOffsetLocal(pet: Pet, now: number, chasingFleeingMouse = false): Point {
+  const mood = getTailMood(pet)
+  const base = moodShape(mood)
+  const elapsedMs = now - pet.actionStartedAt
+  const seated = pet.action === 'sitting' || pet.action === 'grooming' || pet.action === 'kneading'
+
+  let dirX = base.dirX
+  let dirY = base.dirY
+  let reach = base.reach
+
+  // Seated: the tail wraps forward around the front paws rather than
+  // trailing behind — same idea as getTailAnchorLocal's wrapCurl, but here
+  // it's the tip doing the reaching, which is what actually lets the chain
+  // bend into a wrapped-around curve instead of just relocating a straight
+  // line forward.
+  const seatedRamp = rampIn(seated, elapsedMs, POSE_TRANSITION_MS)
+  if (seatedRamp > 0) {
+    const wrap = dir(0.75, 0.4)
+    dirX += (wrap.dirX - base.dirX) * seatedRamp
+    dirY += (wrap.dirY - base.dirY) * seatedRamp
+    reach += (0.5 - base.reach) * seatedRamp
+  }
+
+  // Held: gravity takes over completely, straight down and loose.
+  const heldRamp = rampIn(pet.action === 'held', elapsedMs, POSE_TRANSITION_MS)
+  if (heldRamp > 0) {
+    dirX += (0 - base.dirX) * heldRamp
+    dirY += (1 - base.dirY) * heldRamp
+    reach += (0.9 - base.reach) * heldRamp
+  }
+
+  // Stretching: the whole body elongates, and the tail extends back out
+  // along with it instead of staying curled in.
+  const stretchRamp = rampIn(pet.action === 'stretching', elapsedMs, POSE_TRANSITION_MS)
+  if (stretchRamp > 0) {
+    const stretchDir = dir(-0.5, -0.35)
+    dirX += (stretchDir.dirX - base.dirX) * stretchRamp
+    dirY += (stretchDir.dirY - base.dirY) * stretchRamp
+    reach += (0.92 - base.reach) * stretchRamp
+  }
+
+  // Gait carriage — strut flags the tip up further still, slink drags it
+  // low — same source as getTailAnchorLocal's own smaller carriageAdjust,
+  // applied harder here since this is where carriage actually reads.
+  const gait = selectGait(pet, chasingFleeingMouse)
+  const gaitLift = gait.tailCarriage === 'high' ? -10 : gait.tailCarriage === 'low' ? 12 : 0
+
+  const reachPx = Math.max(0, Math.min(1, reach)) * FULL_REACH
+  return {
+    x: dirX * reachPx + tipSway(mood, now),
+    y: dirY * reachPx + gaitLift,
   }
 }

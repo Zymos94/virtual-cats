@@ -63,8 +63,9 @@ one large synchronous pass, in order, roughly:
    and item consumption, since those need the _other_ entity's
    already-updated state from this same tick.
 7. Step tail-chain physics for every pet (`src/game/tailPhysics.ts`'s
-   `stepChain`), driven by a facing-aware anchor point
-   (`src/game/tailMood.ts`'s `getTailAnchorLocal`).
+   `resolveTailChain`, a double-pinned FABRIK solve as of M25), driven by
+   a facing-aware anchor point and mood-driven tip target
+   (`src/game/tailMood.ts`'s `getTailAnchorLocal` / `getTailTipOffsetLocal`).
 
 `src/game/behaviorFSM.ts` is a **pure function**: `(pet, context) → pet`,
 no side effects, no store access. All mutation, cross-entity effects, and
@@ -91,8 +92,9 @@ been bug-prone, see "Recent fixes" below before touching it again).
 - `src/game/movement.ts` — walking toward a destination; life-stage speed.
 - `src/game/attention.ts` — unified item/cat scoring (urgency × proximity).
 - `src/game/itemPhysics.ts` — gravity/height axis + ground bounce/friction.
-- `src/game/tailPhysics.ts` / `tailMood.ts` — chain-follow tail physics and
-  mood-driven anchor motion (see "Recent fixes" — this took two attempts
+- `src/game/tailPhysics.ts` / `tailMood.ts` — tail physics: a double-pinned
+  FABRIK solve (M25) between a mood-driven anchor and tip target (see the
+  M25 postmortem — this took several attempts across M9/M18/M22/M23/M25
   to get right).
 - `src/game/genetics.ts` / `src/types/genetics.ts` — Mendelian-style allele
   pairs (furColor/pattern/eyeColor/size), dominance order, mutation chance.
@@ -657,6 +659,71 @@ Adding a second shape meant it couldn't stay hardcoded.
   position as mood signal, pupil dilation, per-shape mouth/eye scaling once `BodyPlan`
   lands).
 
+### M25: the tail, rebuilt — a double-pinned FABRIK solve instead of a single-anchor chain (2026-08-18)
+
+The user reported the tail coiling bug again — a screenshot of the deployed app showed a
+cat with a short, stubby tail-clump during ordinary play, the same symptom M22 and M23 had
+each separately (and only partially) patched. Asked directly why this kept recurring, the
+diagnosis: `stepChain` only ever pinned one end of the chain (the anchor) to ground truth;
+the tip was left to emerge freely from local ease-and-constrain steps, with only a weak
+heuristic bias (`STRAIGHTEN`, M23) resisting curl. That bias happened to be strong enough
+for the one sway pattern M23's own test exercised, but nothing in the algorithm actually
+tied the chain's overall shape to a real invariant — it could still drift under a sway
+pattern nobody had tested yet, which is exactly what kept happening. The user's own
+diagnosis matched: "might it help if we... [join] the circles like the leg joints are?" —
+correctly identifying that `catPose.ts`'s leg IK (`solveKnee`, resolved fresh from hip+foot
+every single frame, zero persisted state) never has this class of bug for exactly the
+reason the tail did: it has nothing that _can_ drift, because nothing carries forward.
+
+- **Rewrote `tailPhysics.ts` around a small real-time FABRIK solve.** `resolveTailChain`
+  pins _both_ ends every tick — a true anchor (unchanged, still `getTailAnchorLocal`) and a
+  target (new) — via alternating backward (tip→anchor) and forward (anchor→tip) passes,
+  each joint staying `linkLength` from its neighbor. Seeded from the previous tick's own
+  shape (for visual continuity/flow) but re-anchored to ground truth on both ends every
+  single call, so unlike the old formula there's no channel for a small per-tick bias to
+  compound over hundreds of cycles — proved this two ways: a unit test asserting a static
+  anchor+target reproduces byte-identical joint positions across 2,000 further calls (a true
+  fixed point, not just a slow one), and the exact M23 reproduction scenario (hundreds of
+  cycles of `'content'`-mood sine sway) re-run for the same 60,000-tick duration.
+- **Split the tail's two ends into what they actually represent.** The anchor
+  (`getTailAnchorLocal`, untouched) is the body attach point — posture only, no
+  expressiveness. New `getTailTipOffsetLocal` in `tailMood.ts` is where the _mood_ actually
+  lives: each mood gets its own resting reach-fraction and direction (`content` short and
+  curled up into a happy hook; `agitated` long, low, and taut with a real fast-out/slow-back
+  flick; `social` a lively wide swish; `neutral` a long relaxed trail, never quite frozen
+  even at rest via a small always-on two-frequency drift) plus posture overrides for
+  seated (wraps forward around the paws instead of trailing back), held (straight down,
+  gravity, no mood direction left in it), and stretching (extends back out with the rest of
+  the elongated body) — all ramped in the same way `getTailAnchorLocal`'s existing postures
+  already do, not snapped.
+- **The lag/momentum feel had to move to its own eased point.** `resolveTailChain` always
+  reaches _exactly_ to whatever target it's given — that's the whole point, it's what makes
+  both ends pinned — so feeding it a raw, instantaneously-mood-driven target would make the
+  tip snap with zero lag, losing the "trailing behind" quality entirely. New store field
+  `tailTipTargets` holds one eased point per pet (the _only_ state that isn't recomputed
+  fresh every tick), tuned (`TIP_EASE = 0.18`) to land in roughly the same ~250ms
+  catch-up window the old per-segment chain lag produced, so a sudden mood change still
+  visibly takes a moment to reach the tip — same feel, cleaner mechanism.
+- **Verification took real debugging, not just a clean first pass.** Testing hit the
+  documented rAF-backgrounding gotcha (CLAUDE.md's own working-conventions note) plus a new
+  one: forcing a pet into a mood via `setState` doesn't stick, because `petStore.tick()`'s
+  own FSM/cross-entity-arrival logic re-evaluates and overwrites forced fields on the very
+  next tick even with `timeScale` at 0 (0 only zeroes the _scaled_ `deltaMs`, not every
+  decision path). Fix: drive `tick()` directly and re-force the test pet's fields immediately
+  before every single call, in a tight loop — fully deterministic, immune to both real-time
+  throttling and FSM override. Once that was sorted: all 6 mood/posture shapes read clearly
+  and correctly attached to the body at every zoom level tried; `facing: 'left'` mirrors
+  correctly (the tip offset is deliberately unflipped, same convention as the anchor's own
+  `wrapCurl`/`swing`, added after the anchor's own facing correction); a 10,000-tick run
+  cycling rapidly through every mood/posture back-to-back never produced `NaN` and always
+  recovered to a proper resting shape afterward, not a stuck clump.
+- **New tests, old ones retired.** `tailPhysics.test.ts` rewritten for `resolveTailChain`'s
+  actual invariants (distance constraint, static fixed-point, out-of-reach straight-line
+  fallback, the 60k-tick anti-coil regression, and a check that a short reach produces a
+  genuine bend rather than just a short straight segment). `tailMood.test.ts` gained
+  coverage for `getTailTipOffsetLocal`'s mood shapes and posture ramps. `stepChain` no
+  longer exists — every reference to it in tests/comments is gone.
+
 ## Deferred / future ideas (already noted, not built)
 
 Two items are tracked in Claude's memory system (readable in future
@@ -729,12 +796,16 @@ memory notes — just flag it here if you start one.
 
 ## Where to pick up
 
-There's no queued "next milestone" right now — M8 through M24 are all
+There's no queued "next milestone" right now — M8 through M25 are all
 shipped. This is a natural pause point. `ANIMATION_PLAN.md`'s Phase A4
 (BodyPlan + remaining genetic traits: tail length, leg length, fur
 length) is the most concretely scoped next animation-track step, and
 now has a worked example to follow (`faceShape`, M24) plus a documented
-precedent for handling the save-migration gap. Otherwise, likely next
+precedent for handling the save-migration gap. Tail length in
+particular should read `src/game/tailPhysics.ts`'s M25 rewrite first —
+`resolveTailChain` takes `linkLength`/segment count as plain
+parameters already, so a per-cat tail length is mostly a `BodyPlan`
+plumbing exercise, not another physics rewrite. Otherwise, likely next
 directions, roughly in order of how directly they were signaled by the
 user: whatever new design problems get raised next, then the two
 deferred ideas above (floor materials tends to imply a maps/rooms
